@@ -2,7 +2,8 @@
 To get the model running locally you'll need to install two wheels, one for the rust model backend and one for the python interface.
 1. Download the repo (or clone it to your system to keep up to date with changes).
 2. In target/wheels, copy the path of the .whl file and in your python environment command line, type `pip install (PATH OF .WHL FILE)`
-3. In frontend/dist, copy the path of the other .whl file and likewise `pip install (PATH OF OTHER .WHL FILE)`
+3. In frontend/dist, copy the path of the other .whl file and likewise `pip install (PATH OF OTHER .WHL FILE)` \
+***If you already have a previous version installed, add `--force-reinstall` to these commands to make sure you overwrite them***
 4. You should now have the model installed!
 
 # Usage:
