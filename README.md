@@ -22,9 +22,9 @@ Line one sets the environment:
 2. Relative humidity is set to 50% (0.5)
 3. Air flow speed is set to 0.0
 4. The droplet is made of 10 layers
-5. The solution is nacl, NaCl in water
-6. There are silica nanoparticles in solution
-7. These particles have a radius of 200e-9
+5. The solution is `"nacl"`, NaCl in water. If not specified, pure water is assumed.
+6. There are silica nanoparticles in solution. If not specified then a dummy system of silica NP is assumed. 
+7. These particles have a radius of 200e-9, if not specified then a dummy value of 200e-9 is used.
 
 ***All units are given in SI***
 
