@@ -81,6 +81,8 @@ class GeneralDroplet:
                   terminate_on_locking=False, locking_threshold=400e-9, timer=None):
         if timer is None:
             self.timer = Timer(np.linspace(0.0, time, 10))
+        else:
+            self.timer = timer
         x0 = self.starting_state(radius,solute_concentration,particle_concentration)
         events = []
 
