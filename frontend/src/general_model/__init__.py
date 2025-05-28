@@ -75,7 +75,7 @@ class GeneralDroplet:
         dmdt = np.abs(self.update_state(time,state)[0])*np.exp(state[0])
         return dmdt - threshold
 
-    def integrate(self,time:float,radius:float,solute_concentration:float,particle_concentration:float,rtol=1e-6,
+    def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,rtol=1e-6,
                   terminate_on_equilibration=False, equ_threshold=1e-4,
                   terminate_on_efflorescence=False, eff_threshold=0.5,
                   terminate_on_locking=False, locking_threshold=400e-9, timer=None):
