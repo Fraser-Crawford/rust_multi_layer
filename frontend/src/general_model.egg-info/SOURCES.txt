@@ -1,0 +1,6 @@
+pyproject.toml
+src/general_model/__init__.py
+src/general_model.egg-info/PKG-INFO
+src/general_model.egg-info/SOURCES.txt
+src/general_model.egg-info/dependency_links.txt
+src/general_model.egg-info/top_level.txt
