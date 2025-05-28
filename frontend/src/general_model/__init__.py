@@ -72,7 +72,7 @@ class GeneralDroplet:
         return value
 
     def equilibrate(self,time,state,threshold):
-        dmdt = np.abs(self.update_state(time,state)[0])*np.exp(state[0])
+        dmdt = np.abs(self.update_state(time,state)[self.layers-1])*np.exp(state[self.layers-1])
         return dmdt - threshold
 
     def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,rtol=1e-6,
@@ -85,8 +85,8 @@ class GeneralDroplet:
         events = []
 
         if terminate_on_equilibration:
-            m0 = np.exp(x0[0])
-            equilibrated = lambda time, x:  self.equilibrate(time, x, equ_threshold*m0)
+            dmdt = np.abs(self.update_state(0.0,x0)[self.layers-1])*np.exp(x0[self.layers-1])
+            equilibrated = lambda time, x:  self.equilibrate(time, x, equ_threshold*dmdt)
             equilibrated.terminal = True
             events += [equilibrated]
 
