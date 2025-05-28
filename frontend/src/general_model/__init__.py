@@ -19,13 +19,13 @@ class Timer:
 
 @dataclass
 class GeneralDroplet:
-    solution:str
-    suspension:str
-    layers:int
     temperature:float | Callable[[float],float]
     relative_humidity:float | Callable[[float],float]
     air_speed:float | Callable[[float],float]
-    particle_radius:float
+    layers: int
+    solution: str = field(default="water")
+    suspension: str = field(default="silica")
+    particle_radius: float = field(default=200e-9)
     timer: Timer = field(default=None)
     def starting_state(self,radius:float,solute_concentration:float,particle_concentration:float):
         if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
