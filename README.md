@@ -47,7 +47,7 @@ def temperature_curve(time, t_min):
         return 293 - time*10*(293-t_min)
     else:
         return t_min
-droplet = GeneralDroplet(lambda time: temperature_curve(time,253), 0.5, 0.0, 10, solution=nacl, suspension=silica, particle_radius=200e-9)
+droplet = GeneralDroplet(lambda time: temperature_curve(time,253), 0.5, 0.0, 10, solution="nacl", suspension="silica", particle_radius=200e-9)
 ```
 This allows the simulation to change the temperature with time, here the temperature decreases over the first 0.1 seconds from 293 K to t_min. A `lambda` expression can be used to turn a many argument function into a single argument function.
 ***This works for temperature, relative humidity and air speed***. 
