@@ -147,7 +147,7 @@ class GeneralDataDroplet:
         self.volume = np.sum(self.layer_volumes)
         for layer in range(1,layers):
             self.layer_positions[layer] = np.cbrt(self.layer_volumes[layer]*3/(4*np.pi)+radius**3)
-            radius = self.layer_volumes[layer]
+            radius = self.layer_positions[layer]
 
         self.mfs = self.solute_mass/(self.solvent_mass+self.solute_mass)
         self.wet_layer_volumes = self.layer_volumes - self.layer_particle_mass / particle_density
