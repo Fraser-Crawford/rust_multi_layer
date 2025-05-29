@@ -142,10 +142,10 @@ class GeneralDataDroplet:
         self.particle_mass = np.sum(self.layer_particle_mass)
 
         radius = 0
-        self.layer_positions = np.zeros(layers - 1)
+        self.layer_positions = np.zeros(layers)
         self.layer_volumes = layer_volumes(state, solution, suspension, particle_radius, layers)
         self.volume = np.sum(self.layer_volumes)
-        for layer in range(layers-1):
+        for layer in range(1,layers):
             self.layer_positions[layer] = np.cbrt(3/(4*np.pi)*(self.layer_volumes[layer]-4/3*np.pi*radius**3))
             radius = self.layer_volumes[layer]
 
