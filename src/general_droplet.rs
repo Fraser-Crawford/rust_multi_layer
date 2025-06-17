@@ -4,7 +4,7 @@ use crate::fit::{asymmetric_gaussian, convection_coefficients};
 use crate::suspension::Suspension;
 use crate::binary_definitions::Binary;
 pub const SIGMA:f64 = 5.670374419e-8;
-const REDISTRIBUTION:f64 = 1e2;
+const REDISTRIBUTION:f64 = 1e1;
 const LIMIT_THRESHOLD:f64 = 1e-22;
 pub struct GeneralDroplet{
     //IMMUTABLE STATE
@@ -77,13 +77,17 @@ impl GeneralDroplet{
     pub fn redistribute(&self)->Vec<(f64,f64,f64)>{
         let mut result = vec![(0.0,0.0,0.0);self.layers];
         for i in 0..self.layers-1{
-            let m0 = self.solute_masses[i] + self.solvent_masses[i] + self.particle_masses[i];
-            let m1 = self.solute_masses[i+1] + self.solvent_masses[i+1] + self.particle_masses[i+1];
-            let dm = (m1-m0)*REDISTRIBUTION;
-            let (d_solute, d_particle, d_solvent) = if dm > 0.0{
-                (dm/m1*self.solute_masses[i+1],dm/m1*self.particle_masses[i+1],dm/m1*self.solvent_masses[i+1])
+            let v0 = self.layer_volumes[i];
+            let v1 = self.layer_volumes[i+1];
+            let dv = (v1-v0)*REDISTRIBUTION*(self.layers as f64).powi(2);
+            let (d_solute, d_particle, d_solvent) = if dv > 0.0{
+                (dv*self.solute_masses[i+1]/(v1-self.particle_masses[i+1]/self.suspension.particle_density),
+                 dv*self.particle_masses[i+1]/v1,
+                 dv*self.solvent_masses[i+1]/(v1-self.particle_masses[i+1]/self.suspension.particle_density))
             } else {
-                (dm/m0*self.solute_masses[i],dm/m0*self.particle_masses[i],dm/m0*self.solvent_masses[i])
+                (dv*self.solute_masses[i]/(v0-self.particle_masses[i]/self.suspension.particle_density),
+                 dv*self.particle_masses[i]/v0,
+                 dv*self.solvent_masses[i]/(v0-self.particle_masses[i]/self.suspension.particle_density))
             };
             result[i].0 += d_solute;
             result[i].1 += d_particle;
@@ -136,40 +140,13 @@ impl GeneralDroplet{
         let sherwood = 1.0+0.3*reynolds.sqrt()*prandtl.powf(1.0/3.0);
         let nusselt = 1.0+0.3*reynolds.sqrt()*schmidt.powf(1.0/3.0);
 
-        let mut solute_concentrations = vec![solute_masses[0]/layer_volumes[0];layers+1];
+        let mut solute_concentrations = vec![solute_masses[0]/layer_volumes[0]-particle_masses[0]/suspension.particle_density;layers+1];
         let mut particle_concentrations = vec![particle_masses[0]/layer_volumes[0];layers+1];
 
         for i in 1..layers+1{
-            solute_concentrations[i] = solute_masses[i-1]/(layer_volumes[i-1] - particle_masses[i-1]*suspension.particle_density);
+            solute_concentrations[i] = solute_masses[i-1]/(layer_volumes[i-1] - particle_masses[i-1]/suspension.particle_density);
             particle_concentrations[i] = particle_masses[i-1]/layer_volumes[i-1];
         }
-
-        /*
-        let (solute_concentrations, particle_concentrations) = if layers == 1{
-            (vec![solute_masses[0]/volume,solute_masses[0]/volume], vec![particle_masses[0]/volume,particle_masses[0]/volume])
-        }else {
-            let r0s = &boundaries;
-            let r1s = [&boundaries[1..],&[radius]].concat();
-            let r03s = r0s.iter().map(|r|r.powi(3)).collect::<Vec<f64>>();
-            let r04s = r0s.iter().map(|r|r.powi(4)).collect::<Vec<f64>>();
-            let r13s = r1s.iter().map(|r|r.powi(3)).collect::<Vec<f64>>();
-            let r14s = r1s.iter().map(|r|r.powi(4)).collect::<Vec<f64>>();
-            let cs0 = 3.0*solute_masses[0]/(4.0*PI*r03s[0]);
-            let cp0 = 3.0*particle_masses[0]/(4.0*PI*r03s[0]);
-            let mut solute_concentrations = vec![cs0; layers+1];
-            let mut particle_concentrations = vec![cp0; layers+1];
-            for i in 2..layers+1 {
-                let numerator = solute_masses[i-1]/(4.0*PI) - solute_concentrations[i-1]/3.0*(r13s[i-2]-r03s[i-2]);
-                let denominator = r14s[i-2]/4.0 - r0s[i-2]*r13s[i-2]/3.0 - r04s[i-2]/4.0 + r04s[i-2]/3.0;
-                let gradient = numerator/denominator;
-                solute_concentrations[i] = (gradient*(r1s[i-2]-r0s[i-2])+solute_concentrations[i-1]);
-                let numerator_p = particle_masses[i-1]/(4.0*PI) - particle_concentrations[i-1]/3.0*(r13s[i-2]-r03s[i-2]);
-                let gradient_p = numerator_p/denominator;
-                particle_concentrations[i] = gradient_p*(r1s[i-2]-r0s[i-2])+particle_concentrations[i-1];
-            }
-            (solute_concentrations,particle_concentrations)
-        };
-         */
         let viscosities: Vec<f64> = solute_concentrations.iter().zip(&temperatures).zip(particle_concentrations.iter()).map(|((solute_concentration,T),particle_concentration)|{
             let volume_fraction = particle_concentration/suspension.particle_density;
             let mfs = (solution.mfs)(*solute_concentration);
@@ -310,25 +287,62 @@ impl GeneralDroplet{
         }
         result
     }
-    pub fn dxdt(&self)->Vec<f64>{
+    pub fn displace(&self, dmdt:f64)->Vec<(f64,f64,f64)>{
+        if self.layers>1{
+            let mut result = vec![(0.0,0.0,0.0);self.layers];
+            if dmdt > 0.0{
+                result
+            } else {
+                let fullness:Vec<f64> = self.particle_concentrations.iter().skip(2).map(|c|{
+                    (c-self.suspension.critical_volume_fraction*self.suspension.particle_density).max(0.0).powi(2)/
+                        (self.suspension.maximum_volume_fraction*self.suspension.particle_density - self.suspension.critical_volume_fraction * self.suspension.particle_density)
+                }).collect();
+                let positions = &self.get_positions()[1..];
+                let surface_speed = -dmdt/(4.0*PI*self.radius.powi(2)*self.density);
+                (0..self.layers-1).for_each(|i|{
+                    let volume = surface_speed*4.0*PI*positions[i].powi(3)/self.radius;
+                    let particle_rate = volume*fullness[i];
+                    let volume = particle_rate / self.suspension.particle_density;
+                    let solute_rate = self.solute_concentrations[i]*volume;
+                    let mfs = self.solute_masses[i]/(self.solute_masses[i]+self.solvent_masses[i]);
+                    let solvent_rate = (self.solution.density)(mfs)*(1.0-mfs)*volume;
+                    result[i].0 -= solute_rate;
+                    result[i+1].0 += solute_rate;
+                    result[i].2 -= solvent_rate;
+                    result[i+1].2 += solvent_rate;
+                    result[i].1 += particle_rate;
+                    result[i+1].1 -= particle_rate;
+                });
+                result
+            }
+        } else {
+            vec![(0.0,0.0,0.0)]
+        }
+
+    }
+    pub fn dxdt(&self, convective:bool)->Vec<f64>{
         let mut solute_derivative = vec![0.0; self.layers];
         let mut particle_derivative = vec![0.0; self.layers];
         let mut solvent_derivative = vec![0.0; self.layers];
         let diffusion = self.diffuse();
-        let convect = self.convection();
+        let convect = if convective{
+            self.convection()
+        } else {
+            vec![(0.0,0.0);self.layers]
+        };
         let mass_derivative = self.solvent_mass_derivative();
         let temperature_derivative = self.temperature_derivative(mass_derivative);
         let redistribution = self.redistribute();
-        //let redistribution = vec![(0.0,0.0,0.0);self.layers];
+        let displacement = self.displace(mass_derivative);
         for i in 0..self.layers{
             if self.solute_masses[i] > 0.0{
-                solute_derivative[i] += (diffusion[i].0+redistribution[i].0)/self.solute_masses[i];
+                solute_derivative[i] += (diffusion[i].0+redistribution[i].0+displacement[i].0+convect[i].0)/self.solute_masses[i];
             }
             if self.particle_masses[i] > 0.0{
-                particle_derivative[i] += (diffusion[i].1+redistribution[i].1)/self.particle_masses[i];
+                particle_derivative[i] += (diffusion[i].1+redistribution[i].1+displacement[i].1+convect[i].1)/self.particle_masses[i];
             }
             if self.solvent_masses[i] > 0.0{
-                solvent_derivative[i] += (diffusion[i].2+redistribution[i].2)/self.solvent_masses[i];
+                solvent_derivative[i] += (diffusion[i].2+redistribution[i].2+displacement[i].2)/self.solvent_masses[i];
             }
             if i == self.layers -1{
                 let dmdt = mass_derivative/self.solvent_masses[self.layers-1];

@@ -35,8 +35,8 @@ pub fn get_initial_general_state(solution_string: String, environment:(f64,f64,f
 }
 
 #[pyfunction]
-pub fn general_y_prime(state:Vec<f64>, solution_string: String, environment:(f64,f64,f64), suspension_string: String, suspension_radius:f64,layers:usize)->Vec<f64>{
-    state_to_general_droplet(state, solution_string, environment, suspension_string, suspension_radius,layers).dxdt()
+pub fn general_y_prime(state:Vec<f64>, solution_string: String, environment:(f64,f64,f64), suspension_string: String, suspension_radius:f64,layers:usize,convective:bool)->Vec<f64>{
+    state_to_general_droplet(state, solution_string, environment, suspension_string, suspension_radius,layers).dxdt(convective)
 }
 
 #[pyfunction]

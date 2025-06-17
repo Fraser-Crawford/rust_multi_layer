@@ -26,6 +26,7 @@ class GeneralDroplet:
     solution: str = field(default="water")
     suspension: str = field(default="silica")
     particle_radius: float = field(default=200e-9)
+    convective:bool = field(default=True)
     timer: Timer = field(default=None)
     def starting_state(self,radius:float,solute_concentration:float,particle_concentration:float):
         if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
@@ -59,7 +60,7 @@ class GeneralDroplet:
         else:
             air_speed = self.air_speed(time)
         derivative = np.array(general_y_prime(state,self.solution,(temperature,rh,air_speed),
-                       self.suspension,self.particle_radius,self.layers))
+                       self.suspension,self.particle_radius,self.layers,self.convective))
         return derivative
 
     def efflorescence(self,state):
@@ -116,9 +117,9 @@ class GeneralDroplet:
         Returns:
             A pandas dataframe detailing the complete droplet history.
         """
-        labels = ["radius","surface_temperature","solvent_mass","layer_mfs",
+        labels = ["radius","surface_temperature","solvent_mass","layer_mfs","temperatures",
                   "mfs","layer_positions","layer_solute_concentrations",
-                  "wet_layer_volumes","solute_masses","true_boundaries",
+                  "wet_layer_volumes","solute_masses","true_boundaries","particle_masses",
                   "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations"]
         variables = {key: np.empty(trajectory.t.size, dtype=object) for key in labels}
         for i, state in enumerate(trajectory.y.T):
@@ -145,7 +146,7 @@ class GeneralDataDroplet:
         self.layer_positions = np.zeros(layers)
         self.layer_volumes = layer_volumes(state, solution, suspension, particle_radius, layers)
         self.volume = np.sum(self.layer_volumes)
-        for layer in range(1,layers):
+        for layer in range(layers):
             self.layer_positions[layer] = np.cbrt(self.layer_volumes[layer]*3/(4*np.pi)+radius**3)
             radius = self.layer_positions[layer]
 
@@ -156,14 +157,14 @@ class GeneralDataDroplet:
         self.true_boundaries = np.concatenate(([0], self.layer_positions, [self.radius]))
         self.layer_particle_concentration = self.layer_particle_mass/self.layer_volumes
 
-        self.layer_concentrations = self.solute_masses / (self.layer_volumes - self.wet_layer_volumes)
-        self.layer_solvent_concentrations = self.solvent_masses /(self.layer_volumes-self.wet_layer_volumes)
+        self.layer_concentrations = self.solute_masses /self.wet_layer_volumes
+        self.layer_solvent_concentrations = self.solvent_masses /self.wet_layer_volumes
         self.particle_volume_fraction = self.particle_mass/(self.volume * particle_density)
         self.layer_mfs = self.solute_masses / (self.solvent_masses + self.solute_masses)
 
     def complete_state(self):
-        return dict(radius=self.radius, surface_temperature=self.temperatures[-1],
+        return dict(radius=self.radius, surface_temperature=self.temperatures[-1], temperatures=self.temperatures,
                     solvent_mass=self.solvent_mass, mfs=self.mfs, layer_mfs = self.layer_mfs,
                     layer_positions=self.layer_positions, layer_solute_concentrations=self.layer_concentrations,
-                    wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses,
+                    wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses, particle_masses=self.layer_particle_mass,
                     true_boundaries=self.true_boundaries, layer_particle_concentrations=self.layer_particle_concentration, particle_volume_fraction=self.particle_volume_fraction, layer_solvent_concentrations=self.layer_solvent_concentrations)

@@ -27,6 +27,6 @@ pub fn silica(particle_radius:f64)->Suspension{
         particle_radius,
         particle_density: 2200.0,
         critical_volume_fraction: 0.56,
-        maximum_volume_fraction: PI/(3.0*2.0f64.sqrt()),
+        maximum_volume_fraction: 0.74,
     }
 }
