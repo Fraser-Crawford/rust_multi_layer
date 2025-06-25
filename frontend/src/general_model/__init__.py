@@ -85,7 +85,6 @@ class Droplet:
         else:
             self.timer = timer
         x0 = self.starting_state(radius,solute_concentration,particle_concentration)
-        print(x0)
         events = []
 
         if terminate_on_equilibration:
