@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from rust_model import get_initial_general_state, general_y_prime, general_efflorescence,general_locking,layer_volumes
+from rust_model import get_initial_state, y_prime, efflorescence,locking,volumes
 from scipy.integrate import solve_ivp
 from dataclasses import dataclass, field
 from typing import Callable
@@ -18,7 +18,7 @@ class Timer:
                 self.next_threshold += 1
 
 @dataclass
-class GeneralDroplet:
+class Droplet:
     temperature:float | Callable[[float],float]
     relative_humidity:float | Callable[[float],float]
     air_speed:float | Callable[[float],float]
@@ -41,7 +41,7 @@ class GeneralDroplet:
             air_speed = self.air_speed
         else:
             air_speed = self.air_speed(0.0)
-        return np.array(get_initial_general_state(self.solution,(temperature,rh,air_speed),
+        return np.array(get_initial_state(self.solution,(temperature,rh,air_speed),
                                  self.suspension,self.particle_radius,radius,solute_concentration,
                                  particle_concentration,self.layers))
 
@@ -59,16 +59,16 @@ class GeneralDroplet:
             air_speed = self.air_speed
         else:
             air_speed = self.air_speed(time)
-        derivative = np.array(general_y_prime(state,self.solution,(temperature,rh,air_speed),
+        derivative = np.array(y_prime(state,self.solution,(temperature,rh,air_speed),
                        self.suspension,self.particle_radius,self.layers,self.convective))
         return derivative
 
     def efflorescence(self,state):
-        return general_efflorescence(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
+        return efflorescence(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
                        self.suspension,self.particle_radius,self.layers)
 
     def locking(self,state,locking_threshold):
-        value= general_locking(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
+        value= locking(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
                        self.suspension,self.particle_radius,self.layers,locking_threshold)
         return value
 
@@ -85,6 +85,7 @@ class GeneralDroplet:
         else:
             self.timer = timer
         x0 = self.starting_state(radius,solute_concentration,particle_concentration)
+        print(x0)
         events = []
 
         if terminate_on_equilibration:
@@ -144,7 +145,7 @@ class GeneralDataDroplet:
 
         radius = 0
         self.layer_positions = np.zeros(layers)
-        self.layer_volumes = layer_volumes(state, solution, suspension, particle_radius, layers)
+        self.layer_volumes = volumes(state, solution, suspension, particle_radius, layers)
         self.volume = np.sum(self.layer_volumes)
         for layer in range(layers):
             self.layer_positions[layer] = np.cbrt(self.layer_volumes[layer]*3/(4*np.pi)+radius**3)
@@ -152,7 +153,7 @@ class GeneralDataDroplet:
 
         self.mfs = self.solute_mass/(self.solvent_mass+self.solute_mass)
         self.wet_layer_volumes = self.layer_volumes - self.layer_particle_mass / particle_density
-        self.densities = (self.solute_masses+self.solvent_masses)/(self.layer_volumes-self.wet_layer_volumes)
+        self.densities = (self.solute_masses+self.solvent_masses)/self.wet_layer_volumes
         self.radius = np.cbrt(self.volume*3/(4*np.pi))
         self.true_boundaries = np.concatenate(([0], self.layer_positions, [self.radius]))
         self.layer_particle_concentration = self.layer_particle_mass/self.layer_volumes

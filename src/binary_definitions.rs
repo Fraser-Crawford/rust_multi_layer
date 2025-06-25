@@ -102,7 +102,7 @@ fn nacl()->Binary{
         activity: |mfs,temperature| polynomial(&[48.5226539, -158.04388699, 186.59427048, -93.88696437, 19.28939256,
             -2.99894206, -0.47652352, 1.],mfs),
         density: |mfs|polynomial(&[-940.62808,2895.88613, -2131.05669, 1326.69542 , -55.33776, 998.2],mfs),
-        viscosity: |mfs, temperature| aqueous_NaCl_diffusion(mfs, temperature)/(K*temperature),
+        viscosity: |mfs, temperature| water_viscosity(temperature)*aqueous_NaCl_diffusion(0.0, temperature)/aqueous_NaCl_diffusion(mfs, temperature),
         mfs: |concentration| polynomial(&[-3.67338330e-21,  3.36689881e-17, -1.37012771e-13,  3.36008061e-10,
         -5.85656285e-07,  9.89047989e-04,  2.45656466e-04],concentration),
         volatile: water(),

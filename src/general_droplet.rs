@@ -4,8 +4,8 @@ use crate::fit::{asymmetric_gaussian, convection_coefficients};
 use crate::suspension::Suspension;
 use crate::binary_definitions::Binary;
 pub const SIGMA:f64 = 5.670374419e-8;
-const REDISTRIBUTION:f64 = 1e1;
-const LIMIT_THRESHOLD:f64 = 1e-22;
+pub const REDISTRIBUTION:f64 = 1e1;
+pub const LIMIT_THRESHOLD:f64 = 1e-22;
 pub struct GeneralDroplet{
     //IMMUTABLE STATE
     pub solution: Binary,
