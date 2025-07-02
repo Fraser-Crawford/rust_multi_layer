@@ -4,6 +4,7 @@ from rust_model import get_initial_state, y_prime, efflorescence,locking,volumes
 from scipy.integrate import solve_ivp
 from dataclasses import dataclass, field
 from typing import Callable
+from scipy.sparse import coo_matrix
 
 class Timer:
     def __init__(self, thresholds):
@@ -45,7 +46,7 @@ class Droplet:
                                  self.suspension,self.particle_radius,radius,solute_concentration,
                                  particle_concentration,self.layers))
 
-    def update_state(self,time, state):
+    def update_state(self,time, state, verbose):
         self.timer.check_time(time)
         if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
             rh = self.relative_humidity
@@ -61,6 +62,9 @@ class Droplet:
             air_speed = self.air_speed(time)
         derivative = np.array(y_prime(state,self.solution,(temperature,rh,air_speed),
                        self.suspension,self.particle_radius,self.layers,self.convective))
+        if verbose:
+            print(f"STATE: {state}")
+            print(f"DERIVATIVE: {derivative}")
         return derivative
 
     def efflorescence(self,state):
@@ -76,10 +80,10 @@ class Droplet:
         dmdt = np.abs(self.update_state(time,state)[self.layers-1])*np.exp(state[self.layers-1])
         return dmdt - threshold
 
-    def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,rtol=1e-6,
+    def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,
                   terminate_on_equilibration=False, equ_threshold=1e-4,
                   terminate_on_efflorescence=False, eff_threshold=0.5,
-                  terminate_on_locking=False, locking_threshold=400e-9, timer=None):
+                  terminate_on_locking=False, locking_threshold=400e-9, timer=None, verbose=False,rtol=1e-4):
         if timer is None:
             self.timer = Timer(np.linspace(0.0, time, 10))
         else:
@@ -103,8 +107,8 @@ class Droplet:
             shell_formation.terminal = True
             events += [shell_formation]
 
-        dxdt = lambda time, x: self.update_state(time,x)
-        trajectory = solve_ivp(dxdt, (0,time), x0, rtol=rtol, events=events, method="Radau")
+        dxdt = lambda time, x: self.update_state(time,x,verbose)
+        trajectory = solve_ivp(dxdt, (0,time), x0, atol=1e-6,rtol=rtol, events=events, method="Radau")
         return trajectory
 
     def complete_trajectory(self, trajectory):
