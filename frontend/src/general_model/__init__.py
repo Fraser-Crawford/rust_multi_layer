@@ -68,8 +68,9 @@ class Droplet:
         return derivative
 
     def efflorescence(self,state):
-        return efflorescence(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
+        activity = efflorescence(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
                        self.suspension,self.particle_radius,self.layers)
+        return activity
 
     def locking(self,state,locking_threshold):
         value= locking(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
@@ -83,7 +84,7 @@ class Droplet:
     def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,
                   terminate_on_equilibration=False, equ_threshold=1e-4,
                   terminate_on_efflorescence=False, eff_threshold=0.5,
-                  terminate_on_locking=False, locking_threshold=400e-9, timer=None, verbose=False,rtol=1e-4):
+                  terminate_on_locking=False, locking_threshold=400e-9, timer=None, verbose=False,dense=False,rtol=1e-4):
         if timer is None:
             self.timer = Timer(np.linspace(0.0, time, 10))
         else:
@@ -108,8 +109,28 @@ class Droplet:
             events += [shell_formation]
 
         dxdt = lambda time, x: self.update_state(time,x,verbose)
-        trajectory = solve_ivp(dxdt, (0,time), x0, atol=1e-6,rtol=rtol, events=events, method="Radau")
+        trajectory = solve_ivp(dxdt, (0,time), x0, atol=1e-6,rtol=rtol, events=events, method="Radau",dense_output=dense)
         return trajectory
+
+    def solve_at_time(self,time,trajectory):
+        if trajectory.sol is not None:
+            state = trajectory.sol(time)
+            labels = ["radius", "surface_temperature", "solvent_mass", "layer_mfs", "temperatures",
+                      "mfs", "layer_positions", "layer_solute_concentrations",
+                      "wet_layer_volumes", "solute_masses", "true_boundaries", "particle_masses",
+                      "layer_particle_concentrations", "particle_volume_fraction", "solvent_masses",
+                      "layer_solvent_concentrations"]
+            variables = {key:  np.empty(1, dtype=object) for key in labels}
+            earlier_droplet = GeneralDataDroplet(state, self.solution, self.suspension, self.particle_radius,
+                                                 self.layers)
+            earlier_state = earlier_droplet.complete_state()
+            for label, value in earlier_state.items():
+                variables[label][0] = value
+            variables['time'] = time
+            return pd.DataFrame(variables)
+        else:
+            print("Trajectory was not densely calculated!")
+            return None
 
     def complete_trajectory(self, trajectory):
         """Get the trajectory of all variables (including dependent ones) from a simulation (i.e.
@@ -158,7 +179,7 @@ class GeneralDataDroplet:
         self.wet_layer_volumes = self.layer_volumes - self.layer_particle_mass / particle_density
         self.densities = (self.solute_masses+self.solvent_masses)/self.wet_layer_volumes
         self.radius = np.cbrt(self.volume*3/(4*np.pi))
-        self.true_boundaries = np.concatenate(([0], self.layer_positions, [self.radius]))
+        self.true_boundaries = np.concatenate(([0], self.layer_positions))
         self.layer_particle_concentration = self.layer_particle_mass/self.layer_volumes
 
         self.layer_concentrations = self.solute_masses /self.wet_layer_volumes
