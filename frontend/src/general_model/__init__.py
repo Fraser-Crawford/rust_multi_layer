@@ -6,6 +6,17 @@ from dataclasses import dataclass, field
 from typing import Callable
 from scipy.sparse import coo_matrix
 
+def simulate_measurement(df, soluteD, soluteRI, solventD=1000.0,solventRI=1.33):
+    angle = np.radians(45)
+    n2 = (1 + 2 * df.solution_density * (((soluteRI ** 2 - 1) * df.mfs) / ((soluteRI ** 2 + 2) * soluteD) + (
+            (1 - df.mfs) * (solventRI ** 2 - 1)) / (solventD * (solventRI ** 2 + 2)))) / (
+                    1 - df.solution_density * (((soluteRI ** 2 - 1) * df.mfs) / ((soluteRI ** 2 + 2) * soluteD) + (
+                    (1 - df.mfs) * (solventRI ** 2 - 1)) / (solventD * (solventRI ** 2 + 2))))
+    n = np.sqrt(np.array(n2,dtype=float))
+    water_factor = np.cos(angle/2)+1.33*np.sin(angle/2)/np.sqrt(1+1.33**2-2*1.33*np.cos(angle/2))
+    new_factor = np.cos(angle/2)+n*np.sin(angle/2)/np.sqrt(1+n**2-2*n*np.cos(angle/2))
+    return df.radius*new_factor/water_factor
+
 class Timer:
     def __init__(self, thresholds):
         self.next_threshold = 0
@@ -115,7 +126,7 @@ class Droplet:
     def solve_at_time(self,time,trajectory):
         if trajectory.sol is not None:
             state = trajectory.sol(time)
-            labels = ["radius", "surface_temperature", "solvent_mass", "layer_mfs", "temperatures",
+            labels = ["radius","solution_density", "surface_temperature", "solvent_mass", "layer_mfs", "temperatures",
                       "mfs", "layer_positions", "layer_solute_concentrations",
                       "wet_layer_volumes", "solute_masses", "true_boundaries", "particle_masses",
                       "layer_particle_concentrations", "particle_volume_fraction", "solvent_masses",
@@ -142,7 +153,7 @@ class Droplet:
         Returns:
             A pandas dataframe detailing the complete droplet history.
         """
-        labels = ["radius","surface_temperature","solvent_mass","layer_mfs","temperatures",
+        labels = ["radius","solution_density","surface_temperature","solvent_mass","layer_mfs","temperatures",
                   "mfs","layer_positions","layer_solute_concentrations",
                   "wet_layer_volumes","solute_masses","true_boundaries","particle_masses",
                   "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations"]
@@ -186,9 +197,10 @@ class GeneralDataDroplet:
         self.layer_solvent_concentrations = self.solvent_masses /self.wet_layer_volumes
         self.particle_volume_fraction = self.particle_mass/(self.volume * particle_density)
         self.layer_mfs = self.solute_masses / (self.solvent_masses + self.solute_masses)
+        self.density = (self.solvent_mass + self.solute_mass)/self.volume
 
     def complete_state(self):
-        return dict(radius=self.radius, surface_temperature=self.temperatures[-1], temperatures=self.temperatures,
+        return dict(radius=self.radius,solution_density=self.density,surface_temperature=self.temperatures[-1], temperatures=self.temperatures,
                     solvent_mass=self.solvent_mass, mfs=self.mfs, layer_mfs = self.layer_mfs,
                     layer_positions=self.layer_positions, layer_solute_concentrations=self.layer_concentrations,
                     wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses, particle_masses=self.layer_particle_mass,
