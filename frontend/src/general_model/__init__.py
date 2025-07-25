@@ -31,15 +31,15 @@ class Timer:
 
 @dataclass
 class Droplet:
-    temperature:float | Callable[[float],float]
+    temperature:float | Callable[[float],float] #Temeperature of the droplet core during evaporation
     relative_humidity:float | Callable[[float],float]
-    air_speed:float | Callable[[float],float]
-    layers: int
+    air_speed:float | Callable[[float],float] #Air flow speed can effect both droplet evaporation and composition
+    layers: int #Layers are the number of shells used during simulation
     solution: str = field(default="water")
-    suspension: str = field(default="silica")
+    suspension: str = field(default="silica") # The suspension definition used by the simulation
     particle_radius: float = field(default=200e-9)
-    convective:bool = field(default=True)
-    timer: Timer = field(default=None)
+    convective:bool = field(default=True) #Whether or not the system is allowed to ciculate
+    timer: Timer = field(default=None) #Timer class for allowing print outs of the current time
     def starting_state(self,radius:float,solute_concentration:float,particle_concentration:float):
         if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
             rh = self.relative_humidity
