@@ -38,6 +38,10 @@ fn sucrose_vad_density(mfs:f64)->f64{
     1.0/((1.0-mfs)/1000.0 + mfs/1580.5)
 }
 
+fn sucrose_density(mfs:f64)->f64{
+    1000.0*(0.9989+0.3615*mfs+0.2964*mfs.powi(2)-0.3186*mfs.powi(3)+0.24191*mfs.powi(4))
+}
+
 fn sucrose_viscosity(rh:f64)->f64{
     10.0f64.powf(15.92 - 0.276*rh + 8.68e4*rh.powi(2))
 }
@@ -46,10 +50,10 @@ pub fn sucrose()->Binary{
         volatile_diffusion: |mfw,temperature| sucrose_water_diffusion(sucrose_activity(1.0-mfw,temperature)),
         non_volatile_diffusion: |mfs,temperature| sucrose_water_diffusion(sucrose_activity(mfs,temperature)),
         activity: |mfs,temperature|sucrose_activity(mfs,temperature),
-        density:|mfs| sucrose_vad_density(mfs),
+        density:|mfs| sucrose_density(mfs),
         viscosity: |mfs, temperature| sucrose_viscosity(sucrose_activity(mfs, temperature)*100.0),
         volatile: water(),
-        mfs: sucrose_vad_mfs
+        mfs: |concentration| polynomial(&[ 4.72908344e-11, -2.88752522e-07,  9.70951175e-04,  2.13331134e-03],concentration)
     }
 }
 
@@ -58,10 +62,10 @@ pub fn sucrose_zobrist()->Binary{
         volatile_diffusion: |mfw,temperature| sucrose_water_diffusion_zobrist(sucrose_activity(1.0-mfw,temperature),temperature),
         non_volatile_diffusion: |mfs,temperature| sucrose_water_diffusion_zobrist(sucrose_activity(mfs,temperature),temperature),
         activity: |mfs,temperature|sucrose_activity(mfs,temperature),
-        density:|mfs| sucrose_vad_density(mfs),
+        density:|mfs| sucrose_density(mfs),
         viscosity: |mfs, temperature| sucrose_viscosity(sucrose_activity(mfs, temperature)*100.0),
         volatile: water(),
-        mfs: sucrose_vad_mfs
+        mfs: |concentration| polynomial(&[ 4.72908344e-11, -2.88752522e-07,  9.70951175e-04,  2.13331134e-03],concentration)
     }
 }
 
