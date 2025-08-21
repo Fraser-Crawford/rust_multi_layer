@@ -15,7 +15,7 @@ def simulate_measurement(df, soluteD, soluteRI, solventD=1000.0,solventRI=1.33):
     n = np.sqrt(np.array(n2,dtype=float))
     water_factor = np.cos(angle/2)+1.33*np.sin(angle/2)/np.sqrt(1+1.33**2-2*1.33*np.cos(angle/2))
     new_factor = np.cos(angle/2)+n*np.sin(angle/2)/np.sqrt(1+n**2-2*n*np.cos(angle/2))
-    return df.radius*new_factor/water_factor
+    return df.radius*water_factor/new_factor
 
 class Timer:
     def __init__(self, thresholds):
