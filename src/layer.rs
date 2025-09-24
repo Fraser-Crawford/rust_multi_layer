@@ -3,8 +3,9 @@ use crate::binary_definitions::Binary;
 use crate::suspension::Suspension;
 use crate::environment::Environment;
 use crate::fit::{asymmetric_gaussian, convection_coefficients};
-use crate::general_droplet::{LIMIT_THRESHOLD, REDISTRIBUTION, SIGMA};
-
+pub const SIGMA:f64 = 5.670374419e-8;
+pub const REDISTRIBUTION:f64 = 1e1;
+pub const LIMIT_THRESHOLD:f64 = 1e-22;
 struct Layer{
     temperature: f64,
     solvent_mass: f64,
@@ -95,9 +96,11 @@ fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &En
     let dmdt = 4.0*PI*radius*environment.density()*(solution.volatile.molar_mass/environment.molar_mass)*d_eff*sherwood*vapour_ratio.ln()*beta;
 
     let conduction = nusselt * 4.0*PI*radius.powi(2) * (environment.thermal_conductivity)(environment.temperature) * (environment.temperature-surface_layer.temperature)/radius;
-
-    let heat = (solution.volatile.specific_latent_heat_vaporisation)(surface_layer.temperature)*dmdt;
-
+    let heat = if (surface_layer.solvent_mass < LIMIT_THRESHOLD) && (dmdt < 0.0){
+        0.0
+    } else {
+        (solution.volatile.specific_latent_heat_vaporisation)(surface_layer.temperature)*dmdt
+    };
     let radiation = 4.0*PI*radius.powi(2)*SIGMA*(environment.temperature.powi(4)-surface_layer.temperature.powi(4));
     
     let dtdt = (conduction + heat - radiation)/surface_layer.heat_capacity;
@@ -106,7 +109,7 @@ fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &En
 pub struct Droplet{
     radius:f64,
     layers:Vec<Layer>,
-    solution:Binary,
+    pub solution:Binary,
     suspension:Suspension,
     n:usize,
     dmdt:f64,
@@ -147,8 +150,17 @@ impl Droplet {
             dmdt,
         }
     }
-    pub fn new(log_solvent_masses:Vec<f64>,temperatures:Vec<f64>,log_solute_masses:Vec<f64>,log_particle_masses:Vec<f64>,environment: Environment,solution:Binary,suspension:Suspension,n:usize)->Self{
-        let mut start = 0.0;
+    pub fn get_inner_concentration(&self)->f64{
+        self.layers[0].solute_concentration
+    }
+    pub fn get_inner_mass(&self)->f64{
+        self.layers[0].solute_mass
+    }
+    pub fn get_inner_heat_capacity(&self)->f64{
+        self.layers[0].heat_capacity
+    }
+    pub fn new(log_solvent_masses:Vec<f64>,temperatures:Vec<f64>,log_solute_masses:Vec<f64>,log_particle_masses:Vec<f64>,environment: Environment,solution:Binary,suspension:Suspension,n:usize,crystal_start:f64)->Self{
+        let mut start = crystal_start;
         let layers:Vec<Layer> = (0..n).map(|i|Layer::new(log_solute_masses[i],log_solvent_masses[i],log_particle_masses[i],temperatures[i],&solution,&suspension,&mut start)).collect();
         let volume = layers.iter().enumerate().fold(0.0,|acc,(index,layer)| {
             acc + layer.volume});
