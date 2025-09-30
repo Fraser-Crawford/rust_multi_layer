@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from rust_model import get_initial_state, y_prime, efflorescence,locking,volumes
+from rust_model import get_initial_state, y_prime, efflorescence,locking,volumes,crystal_y_prime,get_initial_crystal_state
 from scipy.integrate import solve_ivp
 from dataclasses import dataclass, field
 from typing import Callable
@@ -28,6 +28,7 @@ class Timer:
             if time > self.thresholds[self.next_threshold]:
                 print(f"Reached {self.thresholds[self.next_threshold]:.2f} s!")
                 self.next_threshold += 1
+
 
 @dataclass
 class Droplet:
@@ -88,8 +89,8 @@ class Droplet:
                        self.suspension,self.particle_radius,self.layers,locking_threshold)
         return value
 
-    def equilibrate(self,time,state,threshold):
-        dmdt = np.abs(self.update_state(time,state)[self.layers-1])*np.exp(state[self.layers-1])
+    def equilibrate(self,time,state,threshold,verbose):
+        dmdt = np.abs(self.update_state(time,state,verbose)[self.layers-1])*np.exp(state[self.layers-1])
         return dmdt - threshold
 
     def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,
@@ -104,8 +105,8 @@ class Droplet:
         events = []
 
         if terminate_on_equilibration:
-            dmdt = np.abs(self.update_state(0.0,x0)[self.layers-1])*np.exp(x0[self.layers-1])
-            equilibrated = lambda time, x:  self.equilibrate(time, x, equ_threshold*dmdt)
+            dmdt = np.abs(self.update_state(0.0,x0,verbose)[self.layers-1])*np.exp(x0[self.layers-1])
+            equilibrated = lambda time, x:  self.equilibrate(time, x, equ_threshold*dmdt,verbose)
             equilibrated.terminal = True
             events += [equilibrated]
 
@@ -132,8 +133,8 @@ class Droplet:
                       "layer_particle_concentrations", "particle_volume_fraction", "solvent_masses",
                       "layer_solvent_concentrations"]
             variables = {key:  np.empty(1, dtype=object) for key in labels}
-            earlier_droplet = GeneralDataDroplet(state, self.solution, self.suspension, self.particle_radius,
-                                                 self.layers)
+            earlier_droplet = DataDroplet(state, self.solution, self.suspension, self.particle_radius,
+                                          self.layers)
             earlier_state = earlier_droplet.complete_state()
             for label, value in earlier_state.items():
                 variables[label][0] = value
@@ -159,7 +160,7 @@ class Droplet:
                   "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations"]
         variables = {key: np.empty(trajectory.t.size, dtype=object) for key in labels}
         for i, state in enumerate(trajectory.y.T):
-            earlier_droplet = GeneralDataDroplet(state, self.solution,self.suspension,self.particle_radius,self.layers)
+            earlier_droplet = DataDroplet(state, self.solution, self.suspension, self.particle_radius, self.layers)
             earlier_state = earlier_droplet.complete_state()
             for label, value in earlier_state.items():
                 variables[label][i] = value
@@ -167,7 +168,7 @@ class Droplet:
         variables['time'] = trajectory.t
         return pd.DataFrame(variables)
 
-class GeneralDataDroplet:
+class DataDroplet:
     def __init__(self, state, solution, suspension, particle_radius, layers, particle_density=2200):
         state = np.array(state)
         self.solvent_masses = np.exp(state[:layers])
@@ -205,3 +206,108 @@ class GeneralDataDroplet:
                     layer_positions=self.layer_positions, layer_solute_concentrations=self.layer_concentrations,
                     wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses, particle_masses=self.layer_particle_mass,
                     true_boundaries=self.true_boundaries, layer_particle_concentrations=self.layer_particle_concentration, particle_volume_fraction=self.particle_volume_fraction, layer_solvent_concentrations=self.layer_solvent_concentrations)
+
+@dataclass(kw_only=True)
+class CrystalDroplet(Droplet):
+    saturation: float
+    growth_rate: float
+    enthalpy: float
+    crystal_density: float
+    def starting_state(self, radius: float, solute_concentration: float, particle_concentration: float):
+        if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
+            rh = self.relative_humidity
+        else:
+            rh = self.relative_humidity(0.0)
+        if type(self.temperature) is float or type(self.temperature) is int:
+            temperature = self.temperature
+        else:
+            temperature = self.temperature(0.0)
+        if type(self.air_speed) is float or type(self.air_speed) is int:
+            air_speed = self.air_speed
+        else:
+            air_speed = self.air_speed(0.0)
+        return np.array(get_initial_crystal_state(solute_concentration,particle_concentration,radius,(temperature,rh,air_speed),self.solution,self.suspension,self.particle_radius,self.layers))
+    def update_state(self, time, state, verbose):
+        self.timer.check_time(time)
+        if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
+            rh = self.relative_humidity
+        else:
+            rh = self.relative_humidity(time)
+        if type(self.temperature) is float or type(self.temperature) is int:
+            temperature = self.temperature
+        else:
+            temperature = self.temperature(time)
+        if type(self.air_speed) is float or type(self.air_speed) is int:
+            air_speed = self.air_speed
+        else:
+            air_speed = self.air_speed(time)
+        derivative = np.array(crystal_y_prime(state, self.solution, (temperature,rh,air_speed),
+                                      self.suspension, self.particle_radius, self.layers, self.convective, self.saturation, self.growth_rate, self.enthalpy, self.crystal_density))
+        if verbose:
+            print(f"STATE: {state}")
+            print(f"DERIVATIVE: {derivative}")
+        return derivative
+    def complete_trajectory(self, trajectory):
+        """Get the trajectory of all variables (including dependent ones) from a simulation (i.e.
+        the output of UniformDroplet.integrate).
+
+        Args:
+            trajectory: the output of UniformDroplet.integrate, which gives the trajectory of independent
+                        variables only.
+        Returns:
+            A pandas dataframe detailing the complete droplet history.
+        """
+        labels = ["radius","solution_density","surface_temperature","solvent_mass","layer_mfs","temperatures",
+                  "mfs","layer_positions","layer_solute_concentrations",
+                  "wet_layer_volumes","solute_masses","true_boundaries","particle_masses",
+                  "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations","crystal_mass"]
+        variables = {key: np.empty(trajectory.t.size, dtype=object) for key in labels}
+        for i, state in enumerate(trajectory.y.T):
+            earlier_droplet = DataCrystalDroplet(state, self.solution, self.suspension, self.particle_radius, self.crystal_density,self.layers)
+            earlier_state = earlier_droplet.complete_state()
+            for label, value in earlier_state.items():
+                variables[label][i] = value
+
+        variables['time'] = trajectory.t
+        return pd.DataFrame(variables)
+
+class DataCrystalDroplet:
+    def __init__(self, state, solution, suspension, particle_radius, crystal_density, layers, particle_density=2200):
+        state = np.array(state)
+        self.solvent_masses = np.exp(state[:layers])
+        self.solvent_mass = np.sum(self.solvent_masses)
+        self.temperatures = state[layers:2*layers]
+        self.solute_masses = np.exp(state[2 * layers:3 * layers])
+        self.solute_mass = np.sum(self.solute_masses)
+        self.layer_particle_mass = np.exp(state[3*layers:4*layers])
+        self.crystal_mass = np.exp(state[4*layers])
+        self.particle_mass = np.sum(self.layer_particle_mass)
+        crystal_volume = self.crystal_mass/crystal_density
+        radius = np.cbrt(3/(4*np.pi)*crystal_volume)
+        self.layer_positions = np.zeros(layers)
+        self.layer_volumes = volumes(state, solution, suspension, particle_radius, layers)
+        self.volume = np.sum(self.layer_volumes)
+        for layer in range(layers):
+            self.layer_positions[layer] = np.cbrt(self.layer_volumes[layer]*3/(4*np.pi)+radius**3)
+            radius = self.layer_positions[layer]
+
+        self.mfs = self.solute_mass/(self.solvent_mass+self.solute_mass)
+        self.wet_layer_volumes = self.layer_volumes - self.layer_particle_mass / particle_density
+        self.densities = (self.solute_masses+self.solvent_masses)/self.wet_layer_volumes
+        self.radius = np.cbrt(self.volume*3/(4*np.pi))
+        self.true_boundaries = np.concatenate(([0], self.layer_positions))
+        self.layer_particle_concentration = self.layer_particle_mass/self.layer_volumes
+
+        self.layer_concentrations = self.solute_masses /self.wet_layer_volumes
+        self.layer_solvent_concentrations = self.solvent_masses /self.wet_layer_volumes
+        self.particle_volume_fraction = self.particle_mass/(self.volume * particle_density)
+        self.layer_mfs = self.solute_masses / (self.solvent_masses + self.solute_masses)
+        self.density = (self.solvent_mass + self.solute_mass)/self.volume
+
+    def complete_state(self):
+        return dict(radius=self.radius,solution_density=self.density,surface_temperature=self.temperatures[-1], temperatures=self.temperatures,
+                    solvent_mass=self.solvent_mass, mfs=self.mfs, layer_mfs = self.layer_mfs,
+                    layer_positions=self.layer_positions, layer_solute_concentrations=self.layer_concentrations,
+                    wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses, particle_masses=self.layer_particle_mass,
+                    true_boundaries=self.true_boundaries, layer_particle_concentrations=self.layer_particle_concentration, particle_volume_fraction=self.particle_volume_fraction,
+                    layer_solvent_concentrations=self.layer_solvent_concentrations, crystal_mass = self.crystal_mass)

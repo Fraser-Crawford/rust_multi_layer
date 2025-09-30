@@ -53,7 +53,11 @@ pub fn sucrose()->Binary{
         density:|mfs| sucrose_density(mfs),
         viscosity: |mfs, temperature| sucrose_viscosity(sucrose_activity(mfs, temperature)*100.0),
         volatile: water(),
-        mfs: |concentration| polynomial(&[ 4.72908344e-11, -2.88752522e-07,  9.70951175e-04,  2.13331134e-03],concentration)
+        mfs: |concentration| polynomial(&[ 4.72908344e-11, -2.88752522e-07,  9.70951175e-04,  2.13331134e-03],concentration),
+        solute_vapour_pressure: |mfs, temperature| 0.0,
+        solute_latent_heat: |temperature| 0.0,
+        solute_molar_mass: 342.3,
+        solute_vapour_binary_diffusion_coefficient: |temperature|0.0,
     }
 }
 
@@ -65,7 +69,11 @@ pub fn sucrose_zobrist()->Binary{
         density:|mfs| sucrose_density(mfs),
         viscosity: |mfs, temperature| sucrose_viscosity(sucrose_activity(mfs, temperature)*100.0),
         volatile: water(),
-        mfs: |concentration| polynomial(&[ 4.72908344e-11, -2.88752522e-07,  9.70951175e-04,  2.13331134e-03],concentration)
+        mfs: |concentration| polynomial(&[ 4.72908344e-11, -2.88752522e-07,  9.70951175e-04,  2.13331134e-03],concentration),
+        solute_vapour_pressure: |mfs, temperature| 0.0,
+        solute_latent_heat: |temperature| 0.0,
+        solute_molar_mass: 342.3,
+        solute_vapour_binary_diffusion_coefficient: |temperature|0.0,
     }
 }
 
@@ -76,7 +84,11 @@ pub struct Binary {
     pub density: fn(f64)->f64,
     pub viscosity: fn(f64,f64) -> f64,
     pub mfs: fn(f64)->f64,
-    pub volatile: Solvent
+    pub volatile: Solvent,
+    pub solute_vapour_pressure: fn(f64,f64)->f64,
+    pub solute_latent_heat: fn(f64)->f64,
+    pub solute_molar_mass: f64,
+    pub solute_vapour_binary_diffusion_coefficient: fn(f64)->f64,
 }
 
 impl Binary{
@@ -89,6 +101,8 @@ impl Binary{
             "sucrose_zobrist"=>sucrose_zobrist(),
             "water"=>pure_water(),
             "nacl"=>nacl(),
+            "acetone_water"=>acetone_water(),
+            "ethanol_water"=>ethanol_water(),
             bad_solution => {panic!("{} IS NOT A KNOWN BINARY SOLUTION",bad_solution)},
         }
     }
@@ -110,6 +124,10 @@ fn nacl()->Binary{
         mfs: |concentration| polynomial(&[-3.67338330e-21,  3.36689881e-17, -1.37012771e-13,  3.36008061e-10,
         -5.85656285e-07,  9.89047989e-04,  2.45656466e-04],concentration),
         volatile: water(),
+        solute_vapour_pressure: |mfs, temperature| 0.0,
+        solute_latent_heat: |temperature| 0.0,
+        solute_molar_mass: 58.443,
+        solute_vapour_binary_diffusion_coefficient: |temperature|0.0,
     }
 }
 
@@ -122,5 +140,43 @@ fn pure_water() -> Binary {
         viscosity: |mfs,temperature|water_viscosity(temperature),
         mfs: |concentration| 0.0,
         volatile: water(),
+        solute_vapour_pressure: |mfs, temperature| 0.0,
+        solute_latent_heat: |temperature| 0.0,
+        solute_molar_mass: 0.0,
+        solute_vapour_binary_diffusion_coefficient: |temperature|0.0,
+    }
+}
+
+fn acetone_water() -> Binary {
+    Binary{
+        volatile_diffusion: |mfw,temperature| 2e-9,
+        non_volatile_diffusion: |mfs,temperature| 2e-9,
+        activity: |mfs,temperature| polynomial(&[ -4.20909806,  11.34113248, -10.86495888,   4.68627885,   0.02769658],1.0-mfs).sqrt(),
+        density: |mfs| polynomial(&[-11.48319621,   67.8898522,  -268.83710607,  996.97012553],mfs),
+        viscosity: |mfs,temperature| water_viscosity(temperature),
+        mfs: |concentration| polynomial(&[ 1.26105862e-10,  2.38874563e-07,  1.01002766e-03, -3.77828436e-04],concentration),
+        volatile: water(),
+        solute_vapour_pressure: |mfs, temperature| 133.32*10.0f64.powf(7.02447-(1167.235/(temperature+224.844-273.15)))*
+            polynomial(&[-1.63526684,  5.78856728, -6.33670548,  3.13542919,  0.01447529],mfs),
+        solute_latent_heat: |temperature| 31e3/58.08e-3,
+        solute_molar_mass: 58.08,
+        solute_vapour_binary_diffusion_coefficient: |temperature| 1.22e-5,
+    }
+}
+
+fn ethanol_water()-> Binary {
+    Binary{
+        volatile_diffusion:|mfw,temperature| 2e-9,
+        non_volatile_diffusion:|mfs,temperature| 2e-9,
+        activity: |mfs,temperature| polynomial(&[ 1.06320401, -0.96404147, -1.31940143,  2.27407497, -0.04457325],1.0-mfs).sqrt(),
+        density: |mfs| polynomial(&[ -92.42424242, -108.39393939,  998.54545455],mfs),
+        viscosity: |mfs,temperature| water_viscosity(temperature),
+        mfs: |concentration| polynomial(&[ 5.47018806e-10, -1.95592318e-07,  1.05808057e-03, -1.24664184e-03],concentration),
+        volatile: water(),
+        solute_vapour_pressure: |mfs, temperature| 133.32*10.0f64.powf(8.04494-(1554.3/(temperature+222.65-273.15)))*
+            polynomial(&[-0.59874137,  2.83710217, -3.01591469,  1.74666051,  0.01336109],mfs),
+        solute_latent_heat: |temperature| 42.32e3/46.069e-3,
+        solute_molar_mass: 46.069,
+        solute_vapour_binary_diffusion_coefficient: |temperature| 1.27e-5,
     }
 }

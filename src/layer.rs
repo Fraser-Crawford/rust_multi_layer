@@ -82,7 +82,7 @@ impl Layer {
     }
 }
 
-fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &Environment)->(f64,f64){
+fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &Environment)->(f64,f64,f64){
     let d_eff = (solution.volatile.vapour_binary_diffusion_coefficient)(environment.temperature);
     let vapour_pressure = (solution.activity)(surface_layer.solute_mass_fraction,surface_layer.temperature)*(solution.volatile.equilibrium_vapour_pressure)(surface_layer.temperature);
     let vapour_ratio = (environment.pressure-vapour_pressure)/(environment.pressure-environment.vapour_pressure(&solution.volatile));
@@ -93,26 +93,40 @@ fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &En
     let schmidt = environment.dynamic_viscosity/(environment.density()*(solution.volatile.vapour_binary_diffusion_coefficient)(environment.temperature));
     let sherwood = 1.0+0.3*reynolds.sqrt()*prandtl.powf(1.0/3.0);
     let nusselt = 1.0+0.3*reynolds.sqrt()*schmidt.powf(1.0/3.0);
-    let dmdt = 4.0*PI*radius*environment.density()*(solution.volatile.molar_mass/environment.molar_mass)*d_eff*sherwood*vapour_ratio.ln()*beta;
-
-    let conduction = nusselt * 4.0*PI*radius.powi(2) * (environment.thermal_conductivity)(environment.temperature) * (environment.temperature-surface_layer.temperature)/radius;
-    let heat = if (surface_layer.solvent_mass < LIMIT_THRESHOLD) && (dmdt < 0.0){
+    let dm_solvent = 4.0*PI*radius*environment.density()*(solution.volatile.molar_mass/environment.molar_mass)*d_eff*sherwood*vapour_ratio.ln()*beta;
+    let solute_vapour_pressure = (solution.solute_vapour_pressure)(surface_layer.solute_mass_fraction,surface_layer.temperature);
+    let dm_solute = if solute_vapour_pressure == 0.0{
         0.0
     } else {
-        (solution.volatile.specific_latent_heat_vaporisation)(surface_layer.temperature)*dmdt
+        let vapour_ratio = (environment.pressure-solute_vapour_pressure)/(environment.pressure);
+        let d_eff = (solution.solute_vapour_binary_diffusion_coefficient)(environment.temperature);
+        4.0*PI*radius*environment.density()*(solution.solute_molar_mass/environment.molar_mass)*d_eff*sherwood*vapour_ratio.ln()*beta
+    };
+    let conduction = nusselt * 4.0*PI*radius.powi(2) * (environment.thermal_conductivity)(environment.temperature) * (environment.temperature-surface_layer.temperature)/radius;
+    let mut heat = if (surface_layer.solvent_mass < LIMIT_THRESHOLD) && (dm_solvent < 0.0){
+        0.0
+    } else {
+        (solution.volatile.specific_latent_heat_vaporisation)(surface_layer.temperature)*dm_solvent
+    };
+    heat += if (surface_layer.solute_mass < LIMIT_THRESHOLD) && (dm_solute < 0.0){
+        0.0
+    } else {
+        (solution.solute_latent_heat)(surface_layer.temperature)*dm_solute
     };
     let radiation = 4.0*PI*radius.powi(2)*SIGMA*(environment.temperature.powi(4)-surface_layer.temperature.powi(4));
     
     let dtdt = (conduction + heat - radiation)/surface_layer.heat_capacity;
-    (dmdt,dtdt)
+    (dm_solvent,dm_solute,dtdt)
 }
+
 pub struct Droplet{
     radius:f64,
     layers:Vec<Layer>,
     pub solution:Binary,
     suspension:Suspension,
     n:usize,
-    dmdt:f64,
+    dm_solvent:f64,
+    dm_solute:f64,
     convection_volumes:Vec<f64>,
     redistribution_volumes:Vec<f64>,
     displacement_volumes:Vec<f64>,
@@ -127,8 +141,8 @@ impl Droplet {
         let coefficients = convection_coefficients(radius);
         let layers: Vec<Layer> = (0..n).map(|_i|Layer::initial(solute_concentration,particle_concentration,layer_volume,environment.temperature,&solution,&suspension,&mut start)).collect();
         let surface = layers.last().unwrap();
-        let (dmdt,dtdt) = evaporation(radius,surface,&solution,&environment);
-        let surface_speed = -dmdt/(4.0*PI*radius.powi(2)*layers.last().unwrap().density);
+        let (dm_solvent,dm_solute,dtdt) = evaporation(radius, surface, &solution, &environment);
+        let surface_speed = -(dm_solvent+dm_solute) /(4.0*PI*radius.powi(2)*layers.last().unwrap().density);
         Self{
             radius,
             convection_volumes: layers.iter().map(|layer|{
@@ -147,7 +161,8 @@ impl Droplet {
             suspension,
             n,
             dtdt,
-            dmdt,
+            dm_solvent,
+            dm_solute
         }
     }
     pub fn get_inner_concentration(&self)->f64{
@@ -167,13 +182,14 @@ impl Droplet {
         
         let radius = (3.0*volume/(4.0*PI)).powf(1.0/3.0);
         let surface = layers.last().unwrap();
-        let (dmdt,dtdt) = evaporation(radius,surface,&solution,&environment);
+        let (dm_solvent, dm_solute,dtdt) = evaporation(radius, surface, &solution, &environment);
         let coefficients = convection_coefficients(radius);
-        let surface_speed = -dmdt/(4.0*PI*radius.powi(2)*layers.last().unwrap().density);
+        let surface_speed = -(dm_solvent+dm_solute) /(4.0*PI*radius.powi(2)*layers.last().unwrap().density);
         Self{
             radius,
             n,
-            dmdt,
+            dm_solvent,
+            dm_solute,
             convection_volumes: layers.iter().map(|layer|{
                 0.5e-18*asymmetric_gaussian((layer.start/radius).powi(2),coefficients)*environment.speed/0.02*(1.0+1e-3/1.81e-5)/(1.0+layer.viscosity/1.81e-5)
             }).collect(),
@@ -315,6 +331,11 @@ impl Droplet {
                     let derivative = self.solute_diffusion(index) + self.solute_convect(index) + self.solute_redistribution(index) + self.solute_displace(index);
                     solute_derivative[index] += derivative;
                     solute_derivative[index + 1] -= derivative;
+                } else {
+                    solute_derivative[index] += self.dm_solute;
+                    if self.layers[index].solute_mass < LIMIT_THRESHOLD{
+                        solute_derivative[index] = solute_derivative[index].max(0.0);
+                    }
                 }
                 solute_derivative[index] /= self.layers[index].solute_mass;
             }
@@ -324,7 +345,7 @@ impl Droplet {
                     solvent_derivative[index] += derivative;
                     solvent_derivative[index + 1] -= derivative;
                 } else {
-                    solvent_derivative[index] += self.dmdt;
+                    solvent_derivative[index] += self.dm_solvent;
                     if self.layers[index].solvent_mass < LIMIT_THRESHOLD{
                         solvent_derivative[index] = solvent_derivative[index].max(0.0);
                     }

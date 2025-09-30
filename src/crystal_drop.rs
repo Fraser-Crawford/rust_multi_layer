@@ -28,7 +28,6 @@ impl CrystalDroplet {
     }
     pub fn get_derivative(&mut self, convective:bool, saturation:f64, growth_rate:f64, enthalpy: f64) ->Vec<f64> {
         let inner_concentration = self.droplet.get_inner_concentration();
-
         let mut crystal_mass_derivative = growth_rate*4.0*PI*self.crystal_radius.powi(2)*(inner_concentration - saturation);
         if self.log_crystal_mass.exp() < LIMIT_THRESHOLD{
             crystal_mass_derivative = crystal_mass_derivative.max(0.0)
@@ -37,7 +36,7 @@ impl CrystalDroplet {
         let mut droplet_derivative = self.droplet.get_derivative(convective);
         droplet_derivative[self.n] += heat/self.droplet.get_inner_heat_capacity();
         droplet_derivative.push(crystal_mass_derivative/self.log_crystal_mass.exp());
-        droplet_derivative[0] -= crystal_mass_derivative/self.droplet.get_inner_mass();
+        droplet_derivative[self.n*2] -= crystal_mass_derivative/self.droplet.get_inner_mass();
         droplet_derivative
     }
 }
