@@ -38,6 +38,7 @@ Line two sets the simulation running:
 
 Line three creates a dataframe from the simulation data. `dataframe.time` is the series of times, `dataframe.layer_solute_concentrations` gives the solute concentration in each layer for each timestep etc. 
 
+By default droplets are made to never accelerate, the keyword `stationary` can be set to `False` when specifying the droplet to allow for acceleration. `gravity` can also be set if desired when `stationary` is set to `False`.
 # Advanced Usage:
 Sometimes you may want the droplet environment to change over time such as the temperature or relative humidity changing. To do this, provide a function that takes in the time as the only argument to the respective environment variable.
 For instance:
@@ -47,9 +48,9 @@ def temperature_curve(time, t_min):
         return 293 - time*10*(293-t_min)
     else:
         return t_min
-droplet = GeneralDroplet(lambda time: temperature_curve(time,253), 0.5, 0.0, 10, solution="nacl", suspension="silica", particle_radius=200e-9)
+droplet = GeneralDroplet(lambda time: temperature_curve(time,253), 0.0, 10, solution="nacl", suspension="silica", particle_radius=200e-9)
 ```
-This allows the simulation to change the temperature with time, here the temperature decreases over the first 0.1 seconds from 293 K to t_min. A `lambda` expression can be used to turn a many argument function into a single argument function.
+This allows the simulation to change the temperature with time, here the temperature decreases over the first 0.1 seconds from 293 K to t_min. A `lambda` expression can be used to turn a many argument function into a single argument function. Note for air speed you must return a tuple of 3 values from this function.
 ***This works for temperature, relative humidity and air speed***. 
 
 There are 3 enablable terminal events for the system as well. When these are detected, the simulation will stop early. When calling droplet.integrate, you can set the flags to enable possible termination:
