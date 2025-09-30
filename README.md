@@ -67,4 +67,5 @@ droplet.integrate can also take a `timer` keyword. `Timer` takes an array of val
 `acetone_water` is acetone in water where both components are volatile. RH defines the gas phase content of water only.
 `ethanol_water` is the same for an ethanol-water mix
 
+Methods for modifying the model can be found in the wiki such as adding your own solution definitions.
 
