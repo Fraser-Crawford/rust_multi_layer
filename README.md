@@ -25,7 +25,7 @@ Line one sets the environment:
 4. The solution is `"nacl"`, NaCl in water. If not specified, pure water is assumed.
 5. There are silica nanoparticles in solution. If not specified then a dummy system of silica NP is assumed. 
 6. These particles have a radius of 200e-9, if not specified then a dummy value of 200e-9 is used.
-7. 3. Air flow speed is set to 0.5 m/s in the +x direction.
+7. Air flow speed is set to 0.5 m/s in the +x direction.
 
 ***Nearly all units are given in SI***
 
