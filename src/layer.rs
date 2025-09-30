@@ -1,4 +1,5 @@
 use std::f64::consts::PI;
+use nalgebra::Vector3;
 use crate::binary_definitions::Binary;
 use crate::suspension::Suspension;
 use crate::environment::Environment;
@@ -22,11 +23,12 @@ struct Layer{
     solute_mass_fraction:f64,
     viscosity:f64,
     start:f64,
-    heat_capacity:f64
+    heat_capacity:f64,
+    mass:f64
 }
 
 impl Layer {
-    pub fn initial(solute_concentration:f64,particle_concentration:f64,volume:f64,temperature:f64,solution:&Binary,suspension:&Suspension, start:&mut f64) -> Self {
+    pub fn initial(solute_concentration:f64,particle_concentration:f64,volume:f64,temperature:f64,solution:&Binary,suspension:&Suspension, start:&mut f64, mass:&mut f64) -> Self {
         let particle_mass = particle_concentration*volume;
         let dry_volume = particle_mass/suspension.particle_density;
         let solute_mass_fraction = (solution.mfs)(solute_concentration);
@@ -38,6 +40,7 @@ impl Layer {
         let old_start = *start;
         *start = (3.0*volume/(4.0*PI)+start.powi(3)).powf(1.0/3.0);
         let solvent_mass = solvent_mass_fraction * density * wet_volume;
+        *mass = *mass + wet_volume*density + particle_mass;
         Self {
             temperature,
             solvent_mass,
@@ -54,10 +57,11 @@ impl Layer {
             solute_mass_fraction,
             viscosity: (solution.viscosity)(solute_mass_fraction, temperature),
             start: old_start,
-            heat_capacity: (solution.volatile.specific_heat_capacity)(temperature)*solvent_mass + suspension.specific_heat_capacity*particle_mass
+            heat_capacity: (solution.volatile.specific_heat_capacity)(temperature)*solvent_mass + suspension.specific_heat_capacity*particle_mass,
+            mass:wet_volume*density + particle_mass,
         }
     }
-    pub fn new(log_solute_mass:f64, log_solvent_mass:f64, log_particle_mass:f64, temperature:f64, solution:&Binary, suspension:&Suspension, start: &mut f64) -> Self {
+    pub fn new(log_solute_mass:f64, log_solvent_mass:f64, log_particle_mass:f64, temperature:f64, solution:&Binary, suspension:&Suspension, start: &mut f64, mass: &mut f64) -> Self {
         let solute_mass = if log_solute_mass <= -80.0 || log_solute_mass > 0.0{
             0.0
         } else {
@@ -78,16 +82,19 @@ impl Layer {
         let density = (solution.density)(solute_mass_fraction);
         let wet_volume = wet_mass/density;
         let volume = wet_mass/density + particle_mass/suspension.particle_density;
-        Layer::initial(solute_mass/wet_volume, particle_mass/volume, volume, temperature, solution, suspension, start)
+        Layer::initial(solute_mass/wet_volume, particle_mass/volume, volume, temperature, solution, suspension, start,mass)
     }
 }
 
-fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &Environment)->(f64,f64,f64){
+fn evaporation(radius:f64, surface_layer:&Layer, solution:&Binary, environment: &Environment, stationary:bool, density:f64, velocity: &[f64]) ->(f64, f64, f64, [f64;3]){
+    let vectored_velocity = Vector3::new(velocity[0],velocity[1],velocity[2]);
+    let relative_velocity = environment.velocity - vectored_velocity;
+    let relative_speed = relative_velocity.magnitude();
     let d_eff = (solution.volatile.vapour_binary_diffusion_coefficient)(environment.temperature);
     let vapour_pressure = (solution.activity)(surface_layer.solute_mass_fraction,surface_layer.temperature)*(solution.volatile.equilibrium_vapour_pressure)(surface_layer.temperature);
     let vapour_ratio = (environment.pressure-vapour_pressure)/(environment.pressure-environment.vapour_pressure(&solution.volatile));
     let prandtl = environment.specific_heat_capacity*environment.dynamic_viscosity/(environment.thermal_conductivity)(environment.temperature);
-    let reynolds = environment.density()*2.0*radius*environment.speed/environment.dynamic_viscosity;
+    let reynolds = environment.density()*2.0*radius*relative_speed/environment.dynamic_viscosity;
     let knudsen = environment.mean_free_path()/radius;
     let beta = (1.0 + knudsen) / (1.0 + (4.0 / 3.0 * (1.0 + knudsen) + 0.377) * knudsen);
     let schmidt = environment.dynamic_viscosity/(environment.density()*(solution.volatile.vapour_binary_diffusion_coefficient)(environment.temperature));
@@ -114,9 +121,27 @@ fn evaporation(radius:f64,surface_layer:&Layer,solution:&Binary,environment: &En
         (solution.solute_latent_heat)(surface_layer.temperature)*dm_solute
     };
     let radiation = 4.0*PI*radius.powi(2)*SIGMA*(environment.temperature.powi(4)-surface_layer.temperature.powi(4));
-    
+
     let dtdt = (conduction + heat - radiation)/surface_layer.heat_capacity;
-    (dm_solvent,dm_solute,dtdt)
+    
+    let dvdt = if stationary {
+        Vector3::zeros()
+    } else {
+        let volume = 4.0/3.0*PI*radius.powi(3);
+        let mass = volume*density;
+        let gas_density = environment.pressure*environment.molar_mass/(8.314*environment.temperature);//PV = nRT, PM/RT = rho
+
+        let weight = mass * environment.gravity;
+        let drag = if relative_speed < 1e-9{
+            Vector3::zeros()
+        } else {
+            let coefficient = 24.0/reynolds * (1.0+reynolds.powf(2.0/3.0)/6.0);
+            coefficient*0.5*gas_density*relative_speed*relative_velocity*radius.powi(2)
+        };
+        let bouyancy = -volume*gas_density*environment.gravity;
+        (weight + drag + bouyancy)/mass
+    };
+    (dm_solvent,dm_solute,dtdt,[dvdt.x,dvdt.y,dvdt.z])
 }
 
 pub struct Droplet{
@@ -131,22 +156,29 @@ pub struct Droplet{
     redistribution_volumes:Vec<f64>,
     displacement_volumes:Vec<f64>,
     dtdt:f64,
+    position:Vec<f64>,
+    velocity:Vec<f64>,
+    acceleration:Vec<f64>,
+    environment: Environment
 }
 
 impl Droplet {
-    pub fn initial(solute_concentration:f64,particle_concentration:f64,radius:f64,environment:Environment,solution:Binary,suspension:Suspension,n:usize)->Self{
+    pub fn initial(solute_concentration:f64,particle_concentration:f64,radius:f64,environment:Environment,solution:Binary,suspension:Suspension,n:usize,velocity:&[f64],stationary:bool)->Self{
         let volume = 4.0/3.0*PI*radius.powi(3);
+        let vectored_velocity = Vector3::new(velocity[0],velocity[1],velocity[2]);
+        let relative_speed = (environment.velocity - vectored_velocity).magnitude();
         let layer_volume = volume/n as f64;
         let mut start = 0.0;
+        let mut mass = 0.0;
         let coefficients = convection_coefficients(radius);
-        let layers: Vec<Layer> = (0..n).map(|_i|Layer::initial(solute_concentration,particle_concentration,layer_volume,environment.temperature,&solution,&suspension,&mut start)).collect();
+        let layers: Vec<Layer> = (0..n).map(|_i|Layer::initial(solute_concentration,particle_concentration,layer_volume,environment.temperature,&solution,&suspension,&mut start, &mut mass)).collect();
         let surface = layers.last().unwrap();
-        let (dm_solvent,dm_solute,dtdt) = evaporation(radius, surface, &solution, &environment);
+        let (dm_solvent,dm_solute,dtdt,dvdt) = evaporation(radius, surface, &solution, &environment,stationary,mass/volume,velocity.into());
         let surface_speed = -(dm_solvent+dm_solute) /(4.0*PI*radius.powi(2)*layers.last().unwrap().density);
         Self{
             radius,
             convection_volumes: layers.iter().map(|layer|{
-                0.5*asymmetric_gaussian((layer.start/radius).powi(2),coefficients)*environment.speed/0.02*(1.0+1e-3/1.81e-5)/(1.0+layer.viscosity/1.81e-5)
+                0.5*asymmetric_gaussian((layer.start/radius).powi(2),coefficients)*relative_speed/0.02*(1.0+1e-3/1.81e-5)/(1.0+layer.viscosity/1.81e-5)
             }).collect(),
             redistribution_volumes: layers.windows(2).map(|pair|{
                 (pair[1].volume-pair[0].volume)*REDISTRIBUTION*(n as f64).powi(2)
@@ -162,7 +194,11 @@ impl Droplet {
             n,
             dtdt,
             dm_solvent,
-            dm_solute
+            dm_solute,
+            velocity:<Vec<f64>>::from(velocity),
+            position:vec![0.0,0.0,0.0],
+            acceleration: Vec::from(dvdt),
+            environment
         }
     }
     pub fn get_inner_concentration(&self)->f64{
@@ -174,15 +210,17 @@ impl Droplet {
     pub fn get_inner_heat_capacity(&self)->f64{
         self.layers[0].heat_capacity
     }
-    pub fn new(log_solvent_masses:Vec<f64>,temperatures:Vec<f64>,log_solute_masses:Vec<f64>,log_particle_masses:Vec<f64>,environment: Environment,solution:Binary,suspension:Suspension,n:usize,crystal_start:f64)->Self{
+    pub fn new(log_solvent_masses:Vec<f64>,temperatures:Vec<f64>,log_solute_masses:Vec<f64>,log_particle_masses:Vec<f64>,environment: Environment,solution:Binary,suspension:Suspension,n:usize,crystal_start:f64,crystal_mass:f64,velocity:&[f64],position:&[f64],stationary:bool)->Self{
         let mut start = crystal_start;
-        let layers:Vec<Layer> = (0..n).map(|i|Layer::new(log_solute_masses[i],log_solvent_masses[i],log_particle_masses[i],temperatures[i],&solution,&suspension,&mut start)).collect();
+        let mut mass = crystal_mass;
+        let vectored_velocity = Vector3::new(velocity[0],velocity[1],velocity[2]);
+        let relative_speed = (environment.velocity - vectored_velocity).magnitude();
+        let layers:Vec<Layer> = (0..n).map(|i|Layer::new(log_solute_masses[i],log_solvent_masses[i],log_particle_masses[i],temperatures[i],&solution,&suspension,&mut start,&mut mass)).collect();
         let volume = layers.iter().enumerate().fold(0.0,|acc,(index,layer)| {
             acc + layer.volume});
-        
         let radius = (3.0*volume/(4.0*PI)).powf(1.0/3.0);
         let surface = layers.last().unwrap();
-        let (dm_solvent, dm_solute,dtdt) = evaporation(radius, surface, &solution, &environment);
+        let (dm_solvent, dm_solute,dtdt,dvdt) = evaporation(radius, surface, &solution, &environment,stationary,mass/volume,velocity);
         let coefficients = convection_coefficients(radius);
         let surface_speed = -(dm_solvent+dm_solute) /(4.0*PI*radius.powi(2)*layers.last().unwrap().density);
         Self{
@@ -191,7 +229,7 @@ impl Droplet {
             dm_solvent,
             dm_solute,
             convection_volumes: layers.iter().map(|layer|{
-                0.5e-18*asymmetric_gaussian((layer.start/radius).powi(2),coefficients)*environment.speed/0.02*(1.0+1e-3/1.81e-5)/(1.0+layer.viscosity/1.81e-5)
+                0.5e-18*asymmetric_gaussian((layer.start/radius).powi(2),coefficients)*relative_speed/0.02*(1.0+1e-3/1.81e-5)/(1.0+layer.viscosity/1.81e-5)
             }).collect(),
             redistribution_volumes: layers.windows(2).map(|pair|{
                 (pair[1].volume-pair[0].volume)*REDISTRIBUTION*(n as f64).powi(2)
@@ -205,6 +243,10 @@ impl Droplet {
             dtdt,
             solution,
             suspension,
+            velocity: <Vec<f64>>::from(velocity),
+            position: <Vec<f64>>::from(position),
+            acceleration: Vec::from(dvdt),
+            environment
         }
     }
     pub fn get_initial_state(&self)->Vec<f64>{
@@ -218,7 +260,7 @@ impl Droplet {
             log_particle_masses.push(layer.particle_mass.ln().max(-100.0));
             temperatures.push(layer.temperature);
         }
-        [log_solvent_masses,temperatures,log_solute_masses,log_particle_masses].concat()
+        [log_solvent_masses,temperatures,log_solute_masses,log_particle_masses, self.velocity.clone(), self.position.clone()].concat()
     }
     pub fn surface_activity(&self)->f64{
         let surface = self.layers.last().unwrap();
@@ -369,7 +411,7 @@ impl Droplet {
             }
         }
 
-        let result = [solvent_derivative,temperature_derivative,solute_derivative,particle_derivative].concat();
+        let result = [solvent_derivative,temperature_derivative,solute_derivative,particle_derivative, self.acceleration.clone(), self.velocity.clone()].concat();
         result
     }
 }

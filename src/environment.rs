@@ -1,4 +1,5 @@
 use std::f64::consts::PI;
+use nalgebra::Vector3;
 use crate::solvent::Solvent;
 use crate::water::water;
 
@@ -13,7 +14,9 @@ pub struct Environment {
     pub(crate) thermal_conductivity: fn(f64) -> f64,
     pub dynamic_viscosity: f64,
     pub speed: f64,
-    pub specific_heat_capacity:f64
+    pub velocity: Vector3<f64>,
+    pub specific_heat_capacity:f64,
+    pub gravity: Vector3<f64>,
 }
 
 impl Environment {
@@ -28,10 +31,11 @@ impl Environment {
     }
 }
 
-pub fn atmosphere(temperature:f64,relative_humidity:f64,speed:f64)->Environment {
+pub fn atmosphere(temperature:f64,relative_humidity:f64,velocity:(f64,f64,f64),gravity:(f64,f64,f64))->Environment {
     let vapour_pressure_water = relative_humidity * (water().equilibrium_vapour_pressure)(temperature);
     let mole_fraction_water = vapour_pressure_water / 101325.0;
     let molar_mass = (1.0-mole_fraction_water) * 28.9647 + mole_fraction_water * water().molar_mass;
+    let air_velocity = Vector3::new(velocity.0,velocity.1,velocity.2);
     Environment{
         molar_mass,
         pressure: 101325.0,
@@ -40,6 +44,8 @@ pub fn atmosphere(temperature:f64,relative_humidity:f64,speed:f64)->Environment 
         specific_heat_capacity:0.7175,
         thermal_conductivity: |t| 7.29955694e-05*t + 4.47229506e-03,
         dynamic_viscosity: 18.13e-6,
-        speed
+        speed:air_velocity.magnitude(),
+        velocity:air_velocity,
+        gravity:Vector3::new(gravity.0,gravity.1,gravity.2)
     }
 }

@@ -1,3 +1,4 @@
+import numpy
 import numpy as np
 import pandas as pd
 from rust_model import get_initial_state, y_prime, efflorescence,locking,volumes,crystal_y_prime,get_initial_crystal_state
@@ -34,13 +35,16 @@ class Timer:
 class Droplet:
     temperature:float | Callable[[float],float] #Temeperature of the droplet core during evaporation
     relative_humidity:float | Callable[[float],float]
-    air_speed:float | Callable[[float],float] #Air flow speed can effect both droplet evaporation and composition
     layers: int #Layers are the number of shells used during simulation
     solution: str = field(default="water")
     suspension: str = field(default="silica") # The suspension definition used by the simulation
     particle_radius: float = field(default=200e-9)
     convective:bool = field(default=True) #Whether or not the system is allowed to ciculate
     timer: Timer = field(default=None) #Timer class for allowing print outs of the current time
+    gravity: tuple = field(default=(0,0,-9.81))
+    air_speed: tuple = field(default=(0.0,0.0,0.0))
+    velocity: tuple = field(default=(0.0,0.0,0.0))
+    stationary: bool = field(default=True)
     def starting_state(self,radius:float,solute_concentration:float,particle_concentration:float):
         if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
             rh = self.relative_humidity
@@ -50,13 +54,13 @@ class Droplet:
             temperature = self.temperature
         else:
             temperature = self.temperature(0.0)
-        if type(self.air_speed) is float or type(self.air_speed) is int:
+        if type(self.air_speed) is tuple:
             air_speed = self.air_speed
         else:
             air_speed = self.air_speed(0.0)
-        return np.array(get_initial_state(self.solution,(temperature,rh,air_speed),
+        return np.array(get_initial_state(self.solution,temperature,rh,air_speed, self.gravity,
                                  self.suspension,self.particle_radius,radius,solute_concentration,
-                                 particle_concentration,self.layers))
+                                 particle_concentration,self.layers,self.velocity,self.stationary))
 
     def update_state(self,time, state, verbose):
         self.timer.check_time(time)
@@ -68,24 +72,48 @@ class Droplet:
             temperature = self.temperature
         else:
             temperature = self.temperature(time)
-        if type(self.air_speed) is float or type(self.air_speed) is int:
+        if type(self.air_speed) is tuple:
             air_speed = self.air_speed
         else:
             air_speed = self.air_speed(time)
-        derivative = np.array(y_prime(state,self.solution,(temperature,rh,air_speed),
-                       self.suspension,self.particle_radius,self.layers,self.convective))
+        derivative = np.array(y_prime(state,self.solution,temperature,rh,air_speed, self.gravity,
+                       self.suspension,self.particle_radius,self.layers,self.convective,self.stationary))
         if verbose:
             print(f"STATE: {state}")
             print(f"DERIVATIVE: {derivative}")
         return derivative
 
-    def efflorescence(self,state):
-        activity = efflorescence(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
+    def efflorescence(self,time,state):
+        if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
+            rh = self.relative_humidity
+        else:
+            rh = self.relative_humidity(time)
+        if type(self.temperature) is float or type(self.temperature) is int:
+            temperature = self.temperature
+        else:
+            temperature = self.temperature(time)
+        if type(self.air_speed) is tuple:
+            air_speed = self.air_speed
+        else:
+            air_speed = self.air_speed(time)
+        activity = efflorescence(state,self.solution,temperature,rh,air_speed, self.gravity,
                        self.suspension,self.particle_radius,self.layers)
         return activity
 
-    def locking(self,state,locking_threshold):
-        value= locking(state,self.solution,(self.temperature,self.relative_humidity,self.air_speed),
+    def locking(self,time,state,locking_threshold):
+        if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
+            rh = self.relative_humidity
+        else:
+            rh = self.relative_humidity(time)
+        if type(self.temperature) is float or type(self.temperature) is int:
+            temperature = self.temperature
+        else:
+            temperature = self.temperature(time)
+        if type(self.air_speed) is tuple:
+            air_speed = self.air_speed
+        else:
+            air_speed = self.air_speed(time)
+        value= locking(state,self.solution,temperature,rh,air_speed, self.gravity,
                        self.suspension,self.particle_radius,self.layers,locking_threshold)
         return value
 
@@ -111,12 +139,12 @@ class Droplet:
             events += [equilibrated]
 
         if terminate_on_efflorescence:
-            efflorescing = lambda time, x: self.efflorescence(x) - eff_threshold
+            efflorescing = lambda time, x: self.efflorescence(time,x) - eff_threshold
             efflorescing.terminal = True
             events += [efflorescing]
 
         if terminate_on_locking:
-            shell_formation = lambda time, x: self.locking(x,locking_threshold)
+            shell_formation = lambda time, x: self.locking(time,x,locking_threshold)
             shell_formation.terminal = True
             events += [shell_formation]
 
@@ -157,7 +185,7 @@ class Droplet:
         labels = ["radius","solution_density","surface_temperature","solvent_mass","layer_mfs","temperatures",
                   "mfs","layer_positions","layer_solute_concentrations",
                   "wet_layer_volumes","solute_masses","true_boundaries","particle_masses",
-                  "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations"]
+                  "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations","position","velocity"]
         variables = {key: np.empty(trajectory.t.size, dtype=object) for key in labels}
         for i, state in enumerate(trajectory.y.T):
             earlier_droplet = DataDroplet(state, self.solution, self.suspension, self.particle_radius, self.layers)
@@ -177,6 +205,10 @@ class DataDroplet:
         self.solute_masses = np.exp(state[2 * layers:3 * layers])
         self.solute_mass = np.sum(self.solute_masses)
         self.layer_particle_mass = np.exp(state[3*layers:4*layers])
+
+        self.velocity = np.array(state[4 * layers:3 + 4 * layers])
+        self.position = np.array(state[3 + 4 * layers:6 + 4 * layers])
+
         self.particle_mass = np.sum(self.layer_particle_mass)
 
         radius = 0
@@ -205,7 +237,8 @@ class DataDroplet:
                     solvent_mass=self.solvent_mass, mfs=self.mfs, layer_mfs = self.layer_mfs,
                     layer_positions=self.layer_positions, layer_solute_concentrations=self.layer_concentrations,
                     wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses, particle_masses=self.layer_particle_mass,
-                    true_boundaries=self.true_boundaries, layer_particle_concentrations=self.layer_particle_concentration, particle_volume_fraction=self.particle_volume_fraction, layer_solvent_concentrations=self.layer_solvent_concentrations)
+                    true_boundaries=self.true_boundaries, layer_particle_concentrations=self.layer_particle_concentration, particle_volume_fraction=self.particle_volume_fraction, layer_solvent_concentrations=self.layer_solvent_concentrations
+                    , velocity=self.velocity,position = self.position)
 
 @dataclass(kw_only=True)
 class CrystalDroplet(Droplet):
@@ -222,11 +255,11 @@ class CrystalDroplet(Droplet):
             temperature = self.temperature
         else:
             temperature = self.temperature(0.0)
-        if type(self.air_speed) is float or type(self.air_speed) is int:
+        if type(self.air_speed) is tuple:
             air_speed = self.air_speed
         else:
             air_speed = self.air_speed(0.0)
-        return np.array(get_initial_crystal_state(solute_concentration,particle_concentration,radius,(temperature,rh,air_speed),self.solution,self.suspension,self.particle_radius,self.layers))
+        return np.array(get_initial_crystal_state(solute_concentration,particle_concentration,radius,temperature,rh,air_speed, self.gravity,self.solution,self.suspension,self.particle_radius,self.layers,self.velocity,self.stationary))
     def update_state(self, time, state, verbose):
         self.timer.check_time(time)
         if type(self.relative_humidity) is float or type(self.relative_humidity) is int:
@@ -237,12 +270,12 @@ class CrystalDroplet(Droplet):
             temperature = self.temperature
         else:
             temperature = self.temperature(time)
-        if type(self.air_speed) is float or type(self.air_speed) is int:
+        if type(self.air_speed) is tuple:
             air_speed = self.air_speed
         else:
             air_speed = self.air_speed(time)
-        derivative = np.array(crystal_y_prime(state, self.solution, (temperature,rh,air_speed),
-                                      self.suspension, self.particle_radius, self.layers, self.convective, self.saturation, self.growth_rate, self.enthalpy, self.crystal_density))
+        derivative = np.array(crystal_y_prime(state, self.solution,temperature,rh,air_speed, self.gravity,
+                                      self.suspension, self.particle_radius, self.layers, self.convective, self.saturation, self.growth_rate, self.enthalpy, self.crystal_density,self.stationary))
         if verbose:
             print(f"STATE: {state}")
             print(f"DERIVATIVE: {derivative}")
@@ -260,7 +293,7 @@ class CrystalDroplet(Droplet):
         labels = ["radius","solution_density","surface_temperature","solvent_mass","layer_mfs","temperatures",
                   "mfs","layer_positions","layer_solute_concentrations",
                   "wet_layer_volumes","solute_masses","true_boundaries","particle_masses",
-                  "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations","crystal_mass"]
+                  "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations","crystal_mass","position","velocity"]
         variables = {key: np.empty(trajectory.t.size, dtype=object) for key in labels}
         for i, state in enumerate(trajectory.y.T):
             earlier_droplet = DataCrystalDroplet(state, self.solution, self.suspension, self.particle_radius, self.crystal_density,self.layers)
@@ -280,7 +313,11 @@ class DataCrystalDroplet:
         self.solute_masses = np.exp(state[2 * layers:3 * layers])
         self.solute_mass = np.sum(self.solute_masses)
         self.layer_particle_mass = np.exp(state[3*layers:4*layers])
-        self.crystal_mass = np.exp(state[4*layers])
+
+        self.velocity = np.array(state[4*layers:3+4*layers])
+        self.position = np.array(state[3+4 * layers:6 + 4 * layers])
+
+        self.crystal_mass = np.exp(state[6 + 4 * layers])
         self.particle_mass = np.sum(self.layer_particle_mass)
         crystal_volume = self.crystal_mass/crystal_density
         radius = np.cbrt(3/(4*np.pi)*crystal_volume)
@@ -310,4 +347,4 @@ class DataCrystalDroplet:
                     layer_positions=self.layer_positions, layer_solute_concentrations=self.layer_concentrations,
                     wet_layer_volumes=self.wet_layer_volumes, solute_masses=self.solute_masses, solvent_masses=self.solvent_masses, particle_masses=self.layer_particle_mass,
                     true_boundaries=self.true_boundaries, layer_particle_concentrations=self.layer_particle_concentration, particle_volume_fraction=self.particle_volume_fraction,
-                    layer_solvent_concentrations=self.layer_solvent_concentrations, crystal_mass = self.crystal_mass)
+                    layer_solvent_concentrations=self.layer_solvent_concentrations, crystal_mass = self.crystal_mass, velocity=self.velocity,position = self.position)

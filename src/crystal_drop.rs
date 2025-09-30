@@ -12,14 +12,14 @@ pub struct CrystalDroplet{
 }
 
 impl CrystalDroplet {
-    pub fn new(log_solvent_masses:Vec<f64>,temperatures:Vec<f64>,log_solute_masses:Vec<f64>,log_particle_masses:Vec<f64>,environment: Environment,solution:Binary,suspension:Suspension,log_crystal_mass:f64,n:usize, crystal_density:f64)->Self{
+    pub fn new(log_solvent_masses:Vec<f64>,temperatures:Vec<f64>,log_solute_masses:Vec<f64>,log_particle_masses:Vec<f64>,environment: Environment,solution:Binary,suspension:Suspension,log_crystal_mass:f64,n:usize, crystal_density:f64,position:&[f64],velocity:&[f64],stationary:bool)->Self{
         let crystal_mass = log_crystal_mass.exp();
         let crystal_volume = crystal_mass / crystal_density;
         let crystal_radius = (3.0/(4.0*PI)*crystal_volume).powf(1.0/3.0);
-        CrystalDroplet{droplet:Droplet::new(log_solvent_masses,temperatures,log_solute_masses,log_particle_masses,environment,solution,suspension,n,crystal_radius),log_crystal_mass,n,crystal_radius}
+        CrystalDroplet{droplet:Droplet::new(log_solvent_masses,temperatures,log_solute_masses,log_particle_masses,environment,solution,suspension,n,crystal_radius,crystal_mass,velocity,position,stationary),log_crystal_mass,n,crystal_radius}
     }
-    pub fn initial(solute_concentration:f64,particle_concentration:f64,radius:f64,environment:Environment,solution:Binary,suspension:Suspension,n:usize)->Self{
-        CrystalDroplet{droplet:Droplet::initial(solute_concentration,particle_concentration,radius,environment,solution,suspension,n),log_crystal_mass:-100.0,n,crystal_radius:0.0}
+    pub fn initial(solute_concentration:f64, particle_concentration:f64, radius:f64, environment:Environment, solution:Binary, suspension:Suspension, n:usize, velocity: &Vec<f64>, stationary:bool) ->Self{
+        CrystalDroplet{droplet:Droplet::initial(solute_concentration,particle_concentration,radius,environment,solution,suspension,n,velocity,stationary),log_crystal_mass:-100.0,n,crystal_radius:0.0}
     }
     pub fn get_initial_state(&self)->Vec<f64>{
         let mut state = self.droplet.get_initial_state();
