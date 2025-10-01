@@ -155,11 +155,10 @@ class Droplet:
     def solve_at_time(self,time,trajectory):
         if trajectory.sol is not None:
             state = trajectory.sol(time)
-            labels = ["radius","solution_density", "surface_temperature", "solvent_mass", "layer_mfs", "temperatures",
-                      "mfs", "layer_positions", "layer_solute_concentrations",
-                      "wet_layer_volumes", "solute_masses", "true_boundaries", "particle_masses",
-                      "layer_particle_concentrations", "particle_volume_fraction", "solvent_masses",
-                      "layer_solvent_concentrations"]
+            labels = ["radius","solution_density","surface_temperature","solvent_mass","layer_mfs","temperatures",
+                  "mfs","layer_positions","layer_solute_concentrations",
+                  "wet_layer_volumes","solute_masses","true_boundaries","particle_masses",
+                  "layer_particle_concentrations","particle_volume_fraction","solvent_masses","layer_solvent_concentrations","position","velocity"]
             variables = {key:  np.empty(1, dtype=object) for key in labels}
             earlier_droplet = DataDroplet(state, self.solution, self.suspension, self.particle_radius,
                                           self.layers)

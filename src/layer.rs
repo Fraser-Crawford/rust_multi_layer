@@ -5,7 +5,7 @@ use crate::suspension::Suspension;
 use crate::environment::Environment;
 use crate::fit::{asymmetric_gaussian, convection_coefficients};
 pub const SIGMA:f64 = 5.670374419e-8;
-pub const REDISTRIBUTION:f64 = 1e1;
+pub const REDISTRIBUTION:f64 = 1e3;
 pub const LIMIT_THRESHOLD:f64 = 1e-22;
 struct Layer{
     temperature: f64,
@@ -102,7 +102,7 @@ fn evaporation(radius:f64, surface_layer:&Layer, solution:&Binary, environment: 
     let nusselt = 1.0+0.3*reynolds.sqrt()*schmidt.powf(1.0/3.0);
     let dm_solvent = 4.0*PI*radius*environment.density()*(solution.volatile.molar_mass/environment.molar_mass)*d_eff*sherwood*vapour_ratio.ln()*beta;
     let solute_vapour_pressure = (solution.solute_vapour_pressure)(surface_layer.solute_mass_fraction,surface_layer.temperature);
-    let dm_solute = if solute_vapour_pressure == 0.0{
+    let dm_solute = if solute_vapour_pressure < 1e-3{
         0.0
     } else {
         let vapour_ratio = (environment.pressure-solute_vapour_pressure)/(environment.pressure);
