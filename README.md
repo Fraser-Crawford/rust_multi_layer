@@ -9,12 +9,12 @@ To get the model running locally you'll need to install two wheels, one for the 
 # Usage:
 The frontend can be imported into your program using the name `general_model`
 -> `from general_model import *`
-general_model has 5 components: `Timer`, which allows you to model simulation progress, `GeneralDroplet` and `CrystalDroplet` for simulations and their respective data versions for data retrieval.
+general_model has 5 components: `Timer`, which allows you to model simulation progress, `Droplet` and `CrystalDroplet` for simulations and their respective data versions for data retrieval.
 
 Here is an example simulation:
 ```
 from general_model import *
-droplet = GeneralDroplet(293, 0.5, 10, solution="nacl", suspension="silica", particle_radius=200e-9, air_speed=(0.5,0.0,0.0))
+droplet = Droplet(293, 0.5, 10, solution="nacl", suspension="silica", particle_radius=200e-9, air_speed=(0.5,0.0,0.0))
 trajectory = droplet.integrate(100, 23e-6, solute_concentration=25, particle_concentration=20, timer = None)
 dataframe = droplet.complete_trajectory(trajectory)
 ```
@@ -48,7 +48,7 @@ def temperature_curve(time, t_min):
         return 293 - time*10*(293-t_min)
     else:
         return t_min
-droplet = GeneralDroplet(lambda time: temperature_curve(time,253), 0.0, 10, solution="nacl", suspension="silica", particle_radius=200e-9)
+droplet = Droplet(lambda time: temperature_curve(time,253), 0.0, 10, solution="nacl", suspension="silica", particle_radius=200e-9)
 ```
 This allows the simulation to change the temperature with time, here the temperature decreases over the first 0.1 seconds from 293 K to t_min. A `lambda` expression can be used to turn a many argument function into a single argument function. Note for air speed you must return a tuple of 3 values from this function.
 ***This works for temperature, relative humidity and air speed***. 
