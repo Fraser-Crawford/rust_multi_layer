@@ -124,14 +124,13 @@ class Droplet:
     def integrate(self,time:float,radius:float,solute_concentration=0.0,particle_concentration=0.0,
                   terminate_on_equilibration=False, equ_threshold=1e-4,
                   terminate_on_efflorescence=False, eff_threshold=0.5,
-                  terminate_on_locking=False, locking_threshold=400e-9, timer=None, verbose=False,dense=False,rtol=1e-4):
+                  terminate_on_locking=False, locking_threshold=400e-9, terminate_when_small=True, size_threshold=100e-9,timer=None, verbose=False,dense=False,rtol=1e-4):
         if timer is None:
             self.timer = Timer(np.linspace(0.0, time, 10))
         else:
             self.timer = timer
         x0 = self.starting_state(radius,solute_concentration,particle_concentration)
         events = []
-
         if terminate_on_equilibration:
             dmdt = np.abs(self.update_state(0.0,x0,verbose)[self.layers-1])*np.exp(x0[self.layers-1])
             equilibrated = lambda time, x:  self.equilibrate(time, x, equ_threshold*dmdt,verbose)

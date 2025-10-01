@@ -158,7 +158,7 @@ fn acetone_water() -> Binary {
         volatile: water(),
         solute_vapour_pressure: |mfs, temperature| 133.32*10.0f64.powf(7.02447-(1167.235/(temperature+224.844-273.15)))*
             polynomial(&[-1.63526684,  5.78856728, -6.33670548,  3.13542919,  0.01447529],mfs),
-        solute_latent_heat: |temperature| 31e3/58.08e-3,
+        solute_latent_heat: |temperature| 489e3*((508.10-temperature)/(508.10-329.22)).powf(0.38),
         solute_molar_mass: 58.08,
         solute_vapour_binary_diffusion_coefficient: |temperature| 1.22e-5,
     }
@@ -174,8 +174,8 @@ fn ethanol_water()-> Binary {
         mfs: |concentration| polynomial(&[ 5.47018806e-10, -1.95592318e-07,  1.05808057e-03, -1.24664184e-03],concentration),
         volatile: water(),
         solute_vapour_pressure: |mfs, temperature| 133.32*10.0f64.powf(8.04494-(1554.3/(temperature+222.65-273.15)))*
-            polynomial(&[-0.59874137,  2.83710217, -3.01591469,  1.74666051,  0.01336109],mfs),
-        solute_latent_heat: |temperature| 42.32e3/46.069e-3,
+            polynomial(&[-0.59874137,  2.83710217, -3.01591469,  1.74666051,  0.0],mfs),
+        solute_latent_heat: |temperature| 120.91e3*(513.92-temperature).powf(0.38), //DELLING OF MULTICOMPONENT FUEL DROPLETS HEATING AND EVAPORATION
         solute_molar_mass: 46.069,
         solute_vapour_binary_diffusion_coefficient: |temperature| 1.27e-5,
     }
